@@ -1,0 +1,48 @@
+# Local stack: one Postgres per app (auth + users). discord-service has no DB here.
+# From the host (see each service .env):
+#   postgres://admin:admin1234@localhost:5432/auth_service
+#   postgres://admin:admin1234@localhost:5433/users_service
+# In Compose, apps would use host auth-db / users-db on port 5432.
+services:
+  auth-db:
+    image: postgres:16
+    container_name: rust-stack-auth-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: auth_service
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin1234
+    ports:
+      - "5432:5432"
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
+
+  users-db:
+    image: postgres:16
+    container_name: rust-stack-users-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: users_service
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin1234
+    ports:
+      - "5433:5432"
+    volumes:
+      - users_db_data:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: rust-stack-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@local.dev
+      PGADMIN_DEFAULT_PASSWORD: admin1234
+    ports:
+      - "5050:80"
+    depends_on:
+      - auth-db
+      - users-db
+
+volumes:
+  auth_db_data:
+  users_db_data:
