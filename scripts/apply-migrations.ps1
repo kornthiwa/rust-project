@@ -15,10 +15,12 @@ function Ensure-Database {
 
 Ensure-Database "users-db" "users_service"
 Ensure-Database "auth-db" "auth_service"
-
+Ensure-Database "product-db" "product_service"
+    
 $migrationSets = @(
     @{ Database = "users_service"; ComposeService = "users-db"; RelativeDir = "users-service\migrations" }
     @{ Database = "auth_service"; ComposeService = "auth-db"; RelativeDir = "auth-service\migrations" }
+    @{ Database = "product_service"; ComposeService = "product-db"; RelativeDir = "product-service\migrations" }
 )
 
 foreach ($set in $migrationSets) {
