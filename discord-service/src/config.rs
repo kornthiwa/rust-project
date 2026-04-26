@@ -5,6 +5,7 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
+
     pub fn from_env() -> Result<Self> {
         let discord_token =
             std::env::var("DISCORD_TOKEN").context("missing DISCORD_TOKEN environment variable")?;

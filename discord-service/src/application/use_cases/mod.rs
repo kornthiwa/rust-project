@@ -1,1 +1,2 @@
-pub mod handle_message;
+pub mod register_guild;
+pub mod add_manga;

@@ -1,20 +1,16 @@
-mod application;
+mod app;
 mod config;
 mod domain;
+mod application;
 mod infrastructure;
 mod presentation;
 
-use anyhow::Result;
-use application::use_cases::handle_message::HandleSlashCommandUseCase;
-use config::AppConfig;
-use presentation::discord::bot::DiscordBot;
-
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
     dotenvy::dotenv().ok();
-    let config = AppConfig::from_env()?;
-    let use_case = HandleSlashCommandUseCase::new();
-    let mut bot = DiscordBot::new(config, use_case).await?;
+    let bot: infrastructure::discord::client::DiscordBot = app::App::build().await;
 
-    bot.start().await
+    if let Err(e) = bot.start().await {
+        eprintln!("bot crashed: {e}");
+    }
 }
