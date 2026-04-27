@@ -1,8 +1,17 @@
-# Runs every *.sql under each migrations/ folder in name order against the matching Compose Postgres service.
-# auth-db / users-db each own one database (POSTGRES_DB); use apply-migrations after fresh volumes if needed.
+# Runs every *.sql under each *-service/migrations folder in name order
+# against the matching Compose Postgres service (<name>-db) and database (<name>_service).
+# New services are discovered automatically when they add a migrations folder.
 $ErrorActionPreference = "Stop"
 $root = Join-Path $PSScriptRoot ".."
 Set-Location $root
+
+function Get-ComposeServices {
+    $services = docker compose config --services 2>$null
+    if (-not $services) {
+        throw "Unable to read docker compose services. Run from repo root and ensure docker compose is available."
+    }
+    return @($services | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+}
 
 function Ensure-Database {
     param([string]$ComposeService, [string]$Name)
@@ -13,17 +22,36 @@ function Ensure-Database {
     docker compose exec -T $ComposeService psql -U admin -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE $Name OWNER admin;"
 }
 
-Ensure-Database "users-db" "users_service"
-Ensure-Database "auth-db" "auth_service"
-Ensure-Database "product-db" "product_service"
-    
-$migrationSets = @(
-    @{ Database = "users_service"; ComposeService = "users-db"; RelativeDir = "users-service\migrations" }
-    @{ Database = "auth_service"; ComposeService = "auth-db"; RelativeDir = "auth-service\migrations" }
-    @{ Database = "product_service"; ComposeService = "product-db"; RelativeDir = "product-service\migrations" }
-)
+function Get-MigrationSets {
+    $serviceDirs = @(Get-ChildItem -Path $root -Directory | Where-Object {
+        $_.Name -like "*-service" -and (Test-Path (Join-Path $_.FullName "migrations"))
+    })
+
+    $sets = @()
+    foreach ($dir in $serviceDirs) {
+        $serviceName = $dir.Name
+        $prefix = $serviceName -replace "-service$", ""
+        if (-not $prefix) { continue }
+
+        $sets += @{
+            Database = "${prefix}_service"
+            ComposeService = "${prefix}-db"
+            RelativeDir = "$serviceName\migrations"
+        }
+    }
+
+    return @($sets | Sort-Object RelativeDir)
+}
+
+$composeServices = Get-ComposeServices
+$migrationSets = Get-MigrationSets
 
 foreach ($set in $migrationSets) {
+    if ($composeServices -notcontains $set.ComposeService) {
+        Write-Warning "Skip: compose service not found: $($set.ComposeService) for $($set.RelativeDir)"
+        continue
+    }
+
     $dir = Join-Path $root $set.RelativeDir
     if (-not (Test-Path $dir)) {
         Write-Warning "Skip: folder not found: $dir"

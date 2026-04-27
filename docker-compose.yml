@@ -1,12 +1,13 @@
-# Local stack: one Postgres per app (auth + users). discord-service has no DB here.
-# From the host (see each service .env):
-#   postgres://admin:admin1234@localhost:5432/auth_service
-#   postgres://admin:admin1234@localhost:5433/users_service
-# In Compose, apps would use host auth-db / users-db on port 5432.
-# Kafka: from host bootstrap localhost:9092; from other containers use kafka:29092 (PLAINTEXT).
+name: rust-stack
+
+# Local development infrastructure for all services.
+# Host connection examples:
+# - auth-db:    postgres://admin:admin1234@localhost:5432/auth_service
+# - users-db:   postgres://admin:admin1234@localhost:5433/users_service
+
 services:
   auth-db:
-    image: postgres:16
+    image: postgres:16-alpine
     container_name: rust-stack-auth-db
     restart: unless-stopped
     environment:
@@ -17,9 +18,16 @@ services:
       - "5432:5432"
     volumes:
       - auth_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d auth_service"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - backend
 
   users-db:
-    image: postgres:16
+    image: postgres:16-alpine
     container_name: rust-stack-users-db
     restart: unless-stopped
     environment:
@@ -30,85 +38,38 @@ services:
       - "5433:5432"
     volumes:
       - users_db_data:/var/lib/postgresql/data
-
-  product-db:
-    image: postgres:16
-    container_name: rust-stack-product-db
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: product_service
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin1234
-    ports:
-      - "5434:5432"
-    volumes:
-      - product_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d users_service"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - backend
 
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: rust-stack-pgadmin
     restart: unless-stopped
+    depends_on:
+      auth-db:
+        condition: service_healthy
+      users-db:
+        condition: service_healthy
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@local.dev
       PGADMIN_DEFAULT_PASSWORD: admin1234
     ports:
       - "5050:80"
-    depends_on:
-      - auth-db
-      - users-db
-      - product-db
-
-  redis:
-    image: redis:7-alpine
-    container_name: rust-stack-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
     volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes
-
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.6.1
-    hostname: zookeeper
-    container_name: rust-stack-zookeeper
-    restart: unless-stopped
-    ports:
-      - "2181:2181"
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-    volumes:
-      - zookeeper_data:/var/lib/zookeeper/data
-
-  kafka:
-    image: confluentinc/cp-kafka:7.6.1
-    hostname: kafka
-    container_name: rust-stack-kafka
-    restart: unless-stopped
-    depends_on:
-      - zookeeper
-    ports:
-      - "9092:9092"
-      - "29092:29092"
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-    volumes:
-      - kafka_data:/var/lib/kafka/data
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - backend
 
 volumes:
-  redis_data:
   auth_db_data:
   users_db_data:
-  product_db_data:
-  zookeeper_data:
-  kafka_data:
+  pgadmin_data:
+
+networks:
+  backend:
+    driver: bridge
