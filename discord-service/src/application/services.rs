@@ -121,6 +121,7 @@ impl AutoUpdateService {
         let mut interval = time::interval(Duration::from_secs(self.interval_seconds));
         loop {
             interval.tick().await;
+            println!("บอทกำลังทำการอัปเดตการ์ตูนอัตโนมัติ");
             if let Err(error) = self.run_once().await {
                 eprintln!("auto update failed: {error}");
             }
