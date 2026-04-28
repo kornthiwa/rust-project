@@ -1,0 +1,23 @@
+---
+description: Rust Onion Architecture conventions
+globs: *-service/**/*.rs
+alwaysApply: false
+---
+
+# Rust Onion Architecture
+
+- Use Onion Architecture with dependency flow inward only.
+- Layer responsibilities:
+  - `domain`: entities, value objects, domain services, and pure business rules.
+  - `application`: use cases, orchestration, and ports/interfaces for external dependencies.
+  - `infrastructure`: adapters for DB, HTTP clients, queues, and framework integrations.
+  - `presentation`: transport concerns such as HTTP handlers, DTO mapping, and request/response parsing.
+- Enforce dependency rule:
+  - `domain` depends on nothing external.
+  - `application` can depend on `domain`.
+  - `infrastructure` and `presentation` can depend on `application`/`domain`.
+  - Outer layers must not leak framework/DB types into inner layers.
+- Keep functions small and names explicit; optimize for readability first.
+- Avoid `unwrap()` and `expect()` in production paths; propagate typed errors with context.
+- Validate inputs at boundaries (HTTP handlers, config loaders, repository adapters).
+- Keep business rules in `domain`/`application`; keep framework or DB details in `infrastructure`.

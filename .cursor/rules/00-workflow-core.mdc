@@ -1,0 +1,13 @@
+---
+description: Core workflow and communication defaults
+alwaysApply: true
+---
+
+# Workflow Core
+
+- Use Thai by default unless the user explicitly asks for another language.
+- If requirements are ambiguous, ask a short clarifying question before broad edits.
+- Before edits, state a brief 1-2 sentence plan.
+- After edits, summarize changed files and intent in concise bullets.
+- Avoid touching unrelated files.
+- Never read or modify `.env` files or secret-bearing files.

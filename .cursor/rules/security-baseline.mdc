@@ -1,0 +1,12 @@
+---
+description: Security baseline and safe handling rules
+alwaysApply: true
+---
+
+# Security Baseline
+
+- Never expose secrets, tokens, private keys, or credentials in code or logs.
+- Do not read or write `.env` files unless explicitly requested by the user.
+- Treat external input as untrusted; require validation and explicit error handling.
+- Avoid destructive commands unless the user clearly requests them.
+- Flag risky operations and present safer alternatives first.
