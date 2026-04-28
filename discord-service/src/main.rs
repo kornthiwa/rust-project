@@ -4,6 +4,7 @@ mod infrastructure;
 mod presentation;
 
 use crate::infrastructure::mongo::MongoPool;
+use crate::infrastructure::repositories::ensure_indexes;
 use crate::presentation::discord::bootstrap;
 use dotenv::dotenv;
 use std::error::Error;
@@ -26,6 +27,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     ensure_env()?;
 
     let mongo_pool = MongoPool::connect_from_env().await?;
+    ensure_indexes(std::sync::Arc::new(mongo_pool.clone()))
+        .await
+        .map_err(|e| std::io::Error::other(format!("create indexes failed: {e}")))?;
     let app = bootstrap::build_application(mongo_pool)
         .map_err(|e| std::io::Error::other(format!("bootstrap failed: {e}")))?;
     bootstrap::run_discord_bot(app).await?;

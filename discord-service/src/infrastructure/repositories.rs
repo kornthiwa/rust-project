@@ -8,6 +8,8 @@ use chrono::{DateTime, Utc};
 use futures::TryStreamExt;
 use mongodb::Collection;
 use mongodb::bson::{DateTime as BsonDateTime, doc, oid::ObjectId};
+use mongodb::options::IndexOptions;
+use mongodb::IndexModel;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -85,6 +87,33 @@ impl MangaRepository for MongoMangaRepository {
 #[derive(Clone)]
 pub struct MongoChannelRepository {
     pool: Arc<MongoPool>,
+}
+
+pub async fn ensure_indexes(pool: Arc<MongoPool>) -> Result<(), AppError> {
+    let mangas = pool.database().collection::<MangaModel>("mangas");
+    let channels = pool.database().collection::<ChannelModel>("channels");
+
+    mangas
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "url": 1 })
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+        )
+        .await
+        .map_err(|e| AppError::Infrastructure(format!("create manga index failed: {e}")))?;
+
+    channels
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "guild_id": 1 })
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+        )
+        .await
+        .map_err(|e| AppError::Infrastructure(format!("create channel index failed: {e}")))?;
+
+    Ok(())
 }
 
 impl MongoChannelRepository {

@@ -38,6 +38,12 @@ impl MangaScraper for HttpMangaScraper {
             .send()
             .await
             .map_err(|e| AppError::Infrastructure(format!("request manga page failed: {e}")))?;
+        if !response.status().is_success() {
+            return Err(AppError::Infrastructure(format!(
+                "request manga page failed with status {}",
+                response.status()
+            )));
+        }
         let html = response
             .text()
             .await

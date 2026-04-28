@@ -50,10 +50,12 @@ impl UpdateNotifier for DiscordNotifier {
 
             for channel_id in &channel_ids {
                 let message = CreateMessage::new().embed(embed.clone());
-                channel_id
-                    .send_message(&self.context.http, message)
-                    .await
-                    .map_err(|e| AppError::Infrastructure(format!("send discord message failed: {e}")))?;
+                if let Err(error) = channel_id.send_message(&self.context.http, message).await {
+                    eprintln!(
+                        "send discord message failed for channel {}: {}",
+                        channel_id, error
+                    );
+                }
             }
         }
 

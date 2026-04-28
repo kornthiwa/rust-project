@@ -3,6 +3,7 @@ use crate::application::ports::{ChannelRepository, MangaRepository, MangaScraper
 use crate::domain::channel_subscription::ChannelSubscription;
 use crate::domain::manga_tracking::MangaTracking;
 use chrono::Utc;
+use futures::stream::{self, StreamExt};
 use std::sync::Arc;
 use tokio::time::{self, Duration};
 
@@ -10,6 +11,7 @@ use tokio::time::{self, Duration};
 pub struct AppServices {
     pub manga_service: Arc<MangaService>,
     pub channel_service: Arc<ChannelService>,
+    pub channel_repository: Arc<dyn ChannelRepository>,
     pub auto_update_service: Arc<AutoUpdateService>,
 }
 
@@ -57,9 +59,6 @@ impl ChannelService {
     pub fn new(repository: Arc<dyn ChannelRepository>) -> Self {
         Self { repository }
     }
-    pub fn repository(&self) -> Arc<dyn ChannelRepository> {
-        self.repository.clone()
-    }
 
     pub async fn register_channel(
         &self,
@@ -88,6 +87,8 @@ pub struct AutoUpdateService {
     manga_repository: Arc<dyn MangaRepository>,
     scraper: Arc<dyn MangaScraper>,
     notifier: Arc<dyn UpdateNotifier>,
+    interval_seconds: u64,
+    max_concurrency: usize,
 }
 
 impl AutoUpdateService {
@@ -95,11 +96,15 @@ impl AutoUpdateService {
         manga_repository: Arc<dyn MangaRepository>,
         scraper: Arc<dyn MangaScraper>,
         notifier: Arc<dyn UpdateNotifier>,
+        interval_seconds: u64,
+        max_concurrency: usize,
     ) -> Self {
         Self {
             manga_repository,
             scraper,
             notifier,
+            interval_seconds,
+            max_concurrency: max_concurrency.max(1),
         }
     }
     pub fn clone_with_notifier(&self, notifier: Arc<dyn UpdateNotifier>) -> Self {
@@ -107,11 +112,13 @@ impl AutoUpdateService {
             manga_repository: self.manga_repository.clone(),
             scraper: self.scraper.clone(),
             notifier,
+            interval_seconds: self.interval_seconds,
+            max_concurrency: self.max_concurrency,
         }
     }
 
     pub async fn run_periodic_update(&self) {
-        let mut interval = time::interval(Duration::from_secs(4 * 60 * 60));
+        let mut interval = time::interval(Duration::from_secs(self.interval_seconds));
         loop {
             interval.tick().await;
             if let Err(error) = self.run_once().await {
@@ -122,31 +129,51 @@ impl AutoUpdateService {
 
     pub async fn run_once(&self) -> Result<(), AppError> {
         let mangas = self.manga_repository.list_all().await?;
-        for manga in mangas {
-            let scrape = match self.scraper.scrape(&manga.url).await {
-                Ok(value) => value,
-                Err(error) => {
-                    eprintln!("scrape failed for {}: {error}", manga.url);
-                    continue;
+        if mangas.is_empty() {
+            return Ok(());
+        }
+
+        let tasks = stream::iter(mangas.into_iter().map(|manga| {
+            let manga_repository = self.manga_repository.clone();
+            let scraper = self.scraper.clone();
+            let notifier = self.notifier.clone();
+
+            async move {
+                let manga_url = manga.url.clone();
+                let scrape = match scraper.scrape(&manga.url).await {
+                    Ok(value) => value,
+                    Err(error) => {
+                        eprintln!("scrape failed for {}: {error}", manga.url);
+                        return Ok::<(), AppError>(());
+                    }
+                };
+
+                if scrape.latest_chapter <= manga.latest_chapter {
+                    return Ok(());
                 }
-            };
 
-            if scrape.latest_chapter <= manga.latest_chapter {
-                continue;
+                let updated = MangaTracking {
+                    title: scrape.title,
+                    url: manga_url.clone(),
+                    latest_chapter: scrape.latest_chapter,
+                    latest_chapter_url: scrape.latest_chapter_url,
+                    image_url: scrape.image_url,
+                    created_at: manga.created_at,
+                    updated_at: Utc::now(),
+                };
+
+                manga_repository.update_latest(&updated).await?;
+                if let Err(error) = notifier.notify_manga_updates(&[updated]).await {
+                    eprintln!("notify update failed for {}: {error}", manga_url);
+                }
+                Ok(())
             }
+        }))
+        .buffer_unordered(self.max_concurrency);
 
-            let updated = MangaTracking {
-                title: scrape.title,
-                url: manga.url,
-                latest_chapter: scrape.latest_chapter,
-                latest_chapter_url: scrape.latest_chapter_url,
-                image_url: scrape.image_url,
-                created_at: manga.created_at,
-                updated_at: Utc::now(),
-            };
-
-            self.manga_repository.update_latest(&updated).await?;
-            self.notifier.notify_manga_updates(&[updated]).await?;
+        let results = tasks.collect::<Vec<Result<(), AppError>>>().await;
+        for result in results {
+            result?;
         }
         Ok(())
     }

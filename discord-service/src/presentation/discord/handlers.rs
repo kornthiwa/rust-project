@@ -6,15 +6,20 @@ use serenity::all::{
     Interaction, Ready,
 };
 use serenity::async_trait;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 pub struct DiscordEventHandler {
     services: Arc<AppServices>,
+    auto_update_started: AtomicBool,
 }
 
 impl DiscordEventHandler {
     pub fn new(services: Arc<AppServices>) -> Self {
-        Self { services }
+        Self {
+            services,
+            auto_update_started: AtomicBool::new(false),
+        }
     }
 }
 
@@ -49,13 +54,15 @@ impl EventHandler for DiscordEventHandler {
             eprintln!("register commands failed: {error}");
         }
 
-        let notifier = Arc::new(DiscordNotifier::new(
-            self.services.channel_service.repository(),
-            ctx.clone(),
-        ));
-        let auto_update = self.services.auto_update_service.clone_with_notifier(notifier);
-        tokio::spawn(async move {
-            auto_update.run_periodic_update().await;
-        });
+        if !self.auto_update_started.swap(true, Ordering::SeqCst) {
+            let notifier = Arc::new(DiscordNotifier::new(
+                self.services.channel_repository.clone(),
+                ctx.clone(),
+            ));
+            let auto_update = self.services.auto_update_service.clone_with_notifier(notifier);
+            tokio::spawn(async move {
+                auto_update.run_periodic_update().await;
+            });
+        }
     }
 }
