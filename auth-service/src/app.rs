@@ -1,29 +1,50 @@
 use std::sync::Arc;
 
+use axum::body::Body;
+use axum::http::Request;
 use axum::Router;
+use axum::middleware;
+use axum::middleware::Next;
+use axum::response::Response;
 use axum::routing::get;
 use toasty::Db;
+use tower_http::catch_panic::CatchPanicLayer;
 
 use crate::application::account::service::AccountService;
+use crate::application::auth::service::AuthService;
 use crate::config::config::AppConfig;
 use crate::domain::account::repository::AccountRepository;
 use crate::domain::account::entity::Account;
 use crate::infrastructure::account::postgres_repository::PostgresAccountRepository;
 use crate::presentation::http::account_handler;
+use crate::presentation::http::auth_handler;
+use crate::presentation::http::middleware::jwt_auth_middleware;
+use crate::presentation::http::error::ApiError;
 
 #[derive(Clone)]
 pub struct AppState {
     pub account_service: Arc<AccountService>,
+    pub auth_service: Arc<AuthService>,
 }
 
 pub async fn build_router(app_config: &AppConfig) -> toasty::Result<Router> {
     let state = build_app_state(app_config).await?;
+    let protected_account_router = account_handler::routes()
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            jwt_auth_middleware,
+        ));
+
     let auth_router = Router::new()
         .route("/", get(root))
-        .nest("/accounts", account_handler::routes());
+        .merge(auth_handler::routes())
+        .nest("/accounts", protected_account_router);
 
     Ok(Router::new()
         .nest("/auth", auth_router)
+        .fallback(fallback_handler)
+        .layer(CatchPanicLayer::new())
+        .layer(middleware::from_fn(print_called_path))
         .with_state(state))
 }
 
@@ -32,15 +53,38 @@ async fn build_app_state(app_config: &AppConfig) -> toasty::Result<AppState> {
         .models(toasty::models!(Account))
         .connect(&app_config.database_url)
         .await?;
-    db.push_schema().await?;
+    if let Err(error) = db.push_schema().await {
+        let error_message = error.to_string();
+        if !error_message.contains("already exists") {
+            return Err(error);
+        }
+        eprintln!("skip schema push: {}", error_message);
+    }
 
     let postgres_repository = PostgresAccountRepository::new(db);
     let account_repository: Arc<dyn AccountRepository> = Arc::new(postgres_repository);
-    let account_service = Arc::new(AccountService::new(account_repository));
+    let account_service = Arc::new(AccountService::new(Arc::clone(&account_repository)));
+    let auth_service = Arc::new(AuthService::new(
+        Arc::clone(&account_repository),
+        app_config.jwt_secret.clone(),
+        app_config.jwt_expiration_seconds,
+    ));
 
-    Ok(AppState { account_service })
+    Ok(AppState {
+        account_service,
+        auth_service,
+    })
 }
 
 async fn root() -> &'static str {
     "hello"
+}
+
+async fn print_called_path(req: Request<Body>, next: Next) -> Response {
+    println!("{} {}", req.method(), req.uri().path());
+    next.run(req).await
+}
+
+async fn fallback_handler() -> ApiError {
+    ApiError::not_found("route_not_found", "route not found")
 }

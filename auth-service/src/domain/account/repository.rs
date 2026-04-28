@@ -6,6 +6,7 @@ use crate::domain::account::entity::Account;
 pub trait AccountRepository: Send + Sync {
     async fn list(&self) -> toasty::Result<Vec<Account>>;
     async fn find_by_id(&self, account_id: u64) -> toasty::Result<Option<Account>>;
+    async fn find_by_username(&self, username: &str) -> toasty::Result<Option<Account>>;
     async fn create(
         &self,
         username: String,

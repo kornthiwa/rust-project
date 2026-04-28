@@ -35,6 +35,11 @@ impl AccountRepository for PostgresAccountRepository {
         Account::filter_by_id(account_id).first().exec(&mut db).await
     }
 
+    async fn find_by_username(&self, username: &str) -> toasty::Result<Option<Account>> {
+        let mut db = self.db.clone();
+        Account::filter_by_username(username).first().exec(&mut db).await
+    }
+
     async fn create(
         &self,
         username: String,

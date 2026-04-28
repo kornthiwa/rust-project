@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 
+use crate::application::error::AppError;
 use crate::domain::account::entity::Account;
 use crate::domain::account::repository::AccountRepository;
 
@@ -32,19 +33,27 @@ impl AccountService {
         Self { repository }
     }
 
-    pub async fn list_accounts(&self) -> toasty::Result<Vec<Account>> {
-        let accounts = self.repository.list().await?;
+    pub async fn list_accounts(&self) -> Result<Vec<Account>, AppError> {
+        let accounts = self
+            .repository
+            .list()
+            .await
+            .map_err(|err| AppError::internal_with_source("repository_error", err.to_string()))?;
         println!("[MOCK CRUD] list accounts: {:?}", accounts);
         Ok(accounts)
     }
 
-    pub async fn get_account(&self, account_id: u64) -> toasty::Result<Option<Account>> {
-        let account = self.repository.find_by_id(account_id).await?;
+    pub async fn get_account(&self, account_id: u64) -> Result<Option<Account>, AppError> {
+        let account = self
+            .repository
+            .find_by_id(account_id)
+            .await
+            .map_err(|err| AppError::internal_with_source("repository_error", err.to_string()))?;
         println!("[MOCK CRUD] get account {}: {:?}", account_id, account);
         Ok(account)
     }
 
-    pub async fn create_account(&self, input: CreateAccountInput) -> toasty::Result<Account> {
+    pub async fn create_account(&self, input: CreateAccountInput) -> Result<Account, AppError> {
         let status = input.status.unwrap_or_else(|| "active".to_string());
         let account = self
             .repository
@@ -56,7 +65,8 @@ impl AccountService {
                 None,
                 None,
             )
-            .await?;
+            .await
+            .map_err(|err| AppError::internal_with_source("repository_error", err.to_string()))?;
         println!("[MOCK CRUD] create account: {:?}", account);
         Ok(account)
     }
@@ -65,7 +75,7 @@ impl AccountService {
         &self,
         account_id: u64,
         input: UpdateAccountInput,
-    ) -> toasty::Result<Option<Account>> {
+    ) -> Result<Option<Account>, AppError> {
         let account = self
             .repository
             .update(
@@ -78,13 +88,19 @@ impl AccountService {
                 input.last_login_at,
                 input.deleted_at,
             );
-        let account = account.await?;
+        let account = account
+            .await
+            .map_err(|err| AppError::internal_with_source("repository_error", err.to_string()))?;
         println!("[MOCK CRUD] update account {}: {:?}", account_id, account);
         Ok(account)
     }
 
-    pub async fn delete_account(&self, account_id: u64) -> toasty::Result<bool> {
-        let is_deleted = self.repository.delete(account_id).await?;
+    pub async fn delete_account(&self, account_id: u64) -> Result<bool, AppError> {
+        let is_deleted = self
+            .repository
+            .delete(account_id)
+            .await
+            .map_err(|err| AppError::internal_with_source("repository_error", err.to_string()))?;
         println!("[MOCK CRUD] delete account {}: {}", account_id, is_deleted);
         Ok(is_deleted)
     }

@@ -2,12 +2,14 @@ use axum::{
     Json, Router,
     extract::{Path, State},
     http::StatusCode,
+    extract::rejection::JsonRejection,
     routing::get,
 };
 
 use crate::application::account::service::{CreateAccountInput, UpdateAccountInput};
 use crate::app::AppState;
 use crate::domain::account::entity::Account;
+use crate::presentation::http::error::{ApiError, HttpResult};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -18,12 +20,12 @@ pub fn routes() -> Router<AppState> {
         )
 }
 
-async fn list_accounts(State(state): State<AppState>) -> Result<Json<Vec<Account>>, StatusCode> {
+async fn list_accounts(State(state): State<AppState>) -> HttpResult<Json<Vec<Account>>> {
     let accounts = state
         .account_service
         .list_accounts()
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(accounts))
 }
@@ -31,26 +33,27 @@ async fn list_accounts(State(state): State<AppState>) -> Result<Json<Vec<Account
 async fn get_account(
     Path(account_id): Path<u64>,
     State(state): State<AppState>,
-) -> Result<Json<Account>, StatusCode> {
+) -> HttpResult<Json<Account>> {
     let account = state
         .account_service
         .get_account(account_id)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .map_err(ApiError::from)?
+        .ok_or_else(|| ApiError::not_found("account_not_found", "account not found"))?;
 
     Ok(Json(account))
 }
 
 async fn create_account(
     State(state): State<AppState>,
-    Json(input): Json<CreateAccountInput>,
-) -> Result<(StatusCode, Json<Account>), StatusCode> {
+    payload: Result<Json<CreateAccountInput>, JsonRejection>,
+) -> HttpResult<(StatusCode, Json<Account>)> {
+    let Json(input) = payload.map_err(ApiError::from)?;
     let account = state
         .account_service
         .create_account(input)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(ApiError::from)?;
 
     Ok((StatusCode::CREATED, Json(account)))
 }
@@ -58,14 +61,15 @@ async fn create_account(
 async fn update_account(
     Path(account_id): Path<u64>,
     State(state): State<AppState>,
-    Json(input): Json<UpdateAccountInput>,
-) -> Result<Json<Account>, StatusCode> {
+    payload: Result<Json<UpdateAccountInput>, JsonRejection>,
+) -> HttpResult<Json<Account>> {
+    let Json(input) = payload.map_err(ApiError::from)?;
     let account = state
         .account_service
         .update_account(account_id, input)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .map_err(ApiError::from)?
+        .ok_or_else(|| ApiError::not_found("account_not_found", "account not found"))?;
 
     Ok(Json(account))
 }
@@ -73,10 +77,10 @@ async fn update_account(
 async fn delete_account(
     Path(account_id): Path<u64>,
     State(state): State<AppState>,
-) -> StatusCode {
+) -> HttpResult<StatusCode> {
     match state.account_service.delete_account(account_id).await {
-        Ok(true) => StatusCode::NO_CONTENT,
-        Ok(false) => StatusCode::NOT_FOUND,
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        Ok(true) => Ok(StatusCode::NO_CONTENT),
+        Ok(false) => Err(ApiError::not_found("account_not_found", "account not found")),
+        Err(error) => Err(ApiError::from(error)),
     }
 }
