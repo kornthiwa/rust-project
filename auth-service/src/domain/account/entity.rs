@@ -1,14 +1,9 @@
-use serde::Serialize;
-use toasty::Model;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Model)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Account {
-    #[key]
-    #[auto]
     pub id: u64,
-    #[unique]
     pub public_id: String,
-    #[unique]
     pub username: String,
     pub password_hash: String,
     pub status: String,

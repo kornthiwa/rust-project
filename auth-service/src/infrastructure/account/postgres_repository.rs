@@ -1,9 +1,11 @@
 use async_trait::async_trait;
 use toasty::Db;
 use uuid::Uuid;
+use chrono::Utc;
 
 use crate::domain::account::entity::Account;
 use crate::domain::account::repository::AccountRepository;
+use crate::infrastructure::account::account_model::AccountModel;
 
 pub struct PostgresAccountRepository {
     db: Db,
@@ -15,11 +17,7 @@ impl PostgresAccountRepository {
     }
 
     fn now_timestamp() -> String {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|duration| duration.as_secs().to_string())
-            .unwrap_or_else(|_| "0".to_string())
+        Utc::now().to_rfc3339()
     }
 }
 
@@ -27,17 +25,26 @@ impl PostgresAccountRepository {
 impl AccountRepository for PostgresAccountRepository {
     async fn list(&self) -> toasty::Result<Vec<Account>> {
         let mut db = self.db.clone();
-        Account::all().exec(&mut db).await
+        let models = AccountModel::all().exec(&mut db).await?;
+        Ok(models.into_iter().map(Into::into).collect())
     }
-
+    
     async fn find_by_id(&self, account_id: u64) -> toasty::Result<Option<Account>> {
         let mut db = self.db.clone();
-        Account::filter_by_id(account_id).first().exec(&mut db).await
+        let model = AccountModel::filter_by_id(account_id)
+            .first()
+            .exec(&mut db)
+            .await?;
+        Ok(model.map(Into::into))
     }
 
     async fn find_by_username(&self, username: &str) -> toasty::Result<Option<Account>> {
         let mut db = self.db.clone();
-        Account::filter_by_username(username).first().exec(&mut db).await
+        let model = AccountModel::filter_by_username(username)
+            .first()
+            .exec(&mut db)
+            .await?;
+        Ok(model.map(Into::into))
     }
 
     async fn create(
@@ -52,7 +59,7 @@ impl AccountRepository for PostgresAccountRepository {
         let mut db = self.db.clone();
         let now = Self::now_timestamp();
 
-        toasty::create!(Account {
+        let model = toasty::create!(AccountModel {
             public_id: Uuid::new_v4().to_string(),
             username,
             password_hash,
@@ -65,7 +72,9 @@ impl AccountRepository for PostgresAccountRepository {
             deleted_at: None,
         })
         .exec(&mut db)
-        .await
+        .await?;
+
+        Ok(model.into())
     }
 
     async fn update(
@@ -80,13 +89,16 @@ impl AccountRepository for PostgresAccountRepository {
         deleted_at: Option<String>,
     ) -> toasty::Result<Option<Account>> {
         let mut db = self.db.clone();
-        let account = Account::filter_by_id(account_id).first().exec(&mut db).await?;
+        let model = AccountModel::filter_by_id(account_id)
+            .first()
+            .exec(&mut db)
+            .await?;
 
-        let Some(mut account) = account else {
+        let Some(mut model) = model else {
             return Ok(None);
         };
 
-        let mut update = account.update();
+        let mut update = model.update();
         if let Some(value) = username {
             update = update.username(value);
         }
@@ -110,18 +122,26 @@ impl AccountRepository for PostgresAccountRepository {
         }
         update = update.updated_at(Self::now_timestamp());
         update.exec(&mut db).await?;
-        Ok(Some(account))
+
+        let updated = AccountModel::filter_by_id(account_id)
+            .first()
+            .exec(&mut db)
+            .await?;
+        Ok(updated.map(Into::into))
     }
 
     async fn delete(&self, account_id: u64) -> toasty::Result<bool> {
         let mut db = self.db.clone();
-        let account = Account::filter_by_id(account_id).first().exec(&mut db).await?;
+        let model = AccountModel::filter_by_id(account_id)
+            .first()
+            .exec(&mut db)
+            .await?;
 
-        let Some(account) = account else {
+        let Some(model) = model else {
             return Ok(false);
         };
 
-        account.delete().exec(&mut db).await?;
+        model.delete().exec(&mut db).await?;
         Ok(true)
     }
 }

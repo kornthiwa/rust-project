@@ -14,12 +14,14 @@ use crate::application::account::service::AccountService;
 use crate::application::auth::service::AuthService;
 use crate::config::config::AppConfig;
 use crate::domain::account::repository::AccountRepository;
-use crate::domain::account::entity::Account;
+use crate::infrastructure::account::account_model::AccountModel;
 use crate::infrastructure::account::postgres_repository::PostgresAccountRepository;
-use crate::presentation::http::account_handler;
-use crate::presentation::http::auth_handler;
-use crate::presentation::http::middleware::jwt_auth_middleware;
-use crate::presentation::http::error::ApiError;
+use crate::presentation::http::{
+    account_handler,
+    auth_handler,
+    error::ApiError,
+    middleware::jwt_auth_middleware,
+};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -50,7 +52,7 @@ pub async fn build_router(app_config: &AppConfig) -> toasty::Result<Router> {
 
 async fn build_app_state(app_config: &AppConfig) -> toasty::Result<AppState> {
     let db: Db = Db::builder()
-        .models(toasty::models!(Account))
+        .models(toasty::models!(AccountModel))
         .connect(&app_config.database_url)
         .await?;
     if let Err(error) = db.push_schema().await {
@@ -58,7 +60,7 @@ async fn build_app_state(app_config: &AppConfig) -> toasty::Result<AppState> {
         if !error_message.contains("already exists") {
             return Err(error);
         }
-        eprintln!("skip schema push: {}", error_message);
+        tracing::warn!("skip schema push: {}", error_message);
     }
 
     let postgres_repository = PostgresAccountRepository::new(db);
@@ -81,7 +83,7 @@ async fn root() -> &'static str {
 }
 
 async fn print_called_path(req: Request<Body>, next: Next) -> Response {
-    println!("{} {}", req.method(), req.uri().path());
+    tracing::info!("{} {}", req.method(), req.uri().path());
     next.run(req).await
 }
 
