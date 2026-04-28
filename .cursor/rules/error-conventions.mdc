@@ -1,0 +1,32 @@
+---
+description: Error handling conventions (domain/application/presentation)
+globs: *-service/**/*.rs
+alwaysApply: false
+---
+
+# Error Conventions
+
+## Layering
+
+- `domain`: Avoid dependencies on frameworks/DBs. If errors are needed, keep them domain-specific and not tied to transport/ORM concerns.
+- `application`: Use use-case friendly errors (e.g. `AppError`) to express business meaning plus a stable `code`.
+- `presentation` (HTTP): Convert to `ApiError` and **do not leak internal details** (stacktraces/SQL/connection strings/secrets).
+- `infrastructure`: Keep technical details here (DB/ORM/clients) and return errors upward with appropriate context.
+
+## Mapping guideline
+
+- Map `AppError` -> `ApiError` deterministically:
+  - `Validation` -> 400
+  - `Unauthorized` -> 401 (+ `WWW-Authenticate: Bearer` for bearer auth)
+  - `NotFound` -> 404
+  - `Conflict` -> 409
+  - `Internal` -> 500 (return only a `code` and/or a generic message)
+- `ApiError.message` must be safe to show to clients.
+- `Internal.source` (or infra details) is for logs/observability, not for responses.
+
+## Practices
+
+- Use guard clauses/early returns for preconditions and boundary validations.
+- Avoid `unwrap()`/`expect()` in production paths; propagate errors upward with context.
+- Avoid “silent failures” (swallowing errors or returning misleading defaults).
+- Keep `code` stable (e.g. `account_not_found`, `invalid_credentials`) so frontend/monitoring can rely on it.

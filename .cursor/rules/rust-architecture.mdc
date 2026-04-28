@@ -17,6 +17,7 @@ alwaysApply: false
   - `application` can depend on `domain`.
   - `infrastructure` and `presentation` can depend on `application`/`domain`.
   - Outer layers must not leak framework/DB types into inner layers.
+- Keep persistence/query methods (ORM “active record” style) in `infrastructure` models; repositories adapt those models to `domain` entities.
 - Keep functions small and names explicit; optimize for readability first.
 - Avoid `unwrap()` and `expect()` in production paths; propagate typed errors with context.
 - Validate inputs at boundaries (HTTP handlers, config loaders, repository adapters).

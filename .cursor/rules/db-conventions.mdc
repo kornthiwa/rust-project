@@ -9,7 +9,9 @@ alwaysApply: false
 - Use `toasty` as the ORM for persistence operations across service projects (for example `auth-service`, `users-service`).
 - Use PostgreSQL as the primary database engine.
 - Keep DB wiring and adapter code in `infrastructure`; do not move it into `domain`.
-- Do not leak framework/ORM-specific types into `domain`; map to domain types at boundaries.
+- Do not leak framework/ORM-specific types into `domain`; map to domain types at boundaries (e.g. `AccountModel` -> `domain::Account`).
+- Treat `domain/*/entity.rs` as pure domain structs; ORM traits/derives (เช่น `toasty::Model`) อยู่ที่ `infrastructure/*/*_model.rs` เท่านั้น
+- In `Db::builder().models(...)`, register `toasty::Model` types (e.g. `AccountModel`), not domain entities.
 - Never hardcode empty or static values for unique fields (for example `public_id`).
 - Generate identifiers and timestamps in a consistent place (repository/adapter layer).
 - Read connection settings from environment-backed config, not inline literals across handlers/services.
