@@ -18,6 +18,7 @@ Create a new `*-service` that can run immediately and follows this repository's 
 ## Required Inputs
 
 Collect before editing:
+
 - Service name (must end with `-service`)
 - Main capability (one sentence)
 - HTTP base path (example: `/users`, `/billing`)
@@ -29,7 +30,7 @@ If any required input is missing, ask a short clarifying question first.
 1. **Create project**
    - Create crate at repo root: `<name>-service/`.
    - Use Rust 2024 edition.
-   - Add mandatory dependencies: `axum`, `toasty` (postgresql feature), `tokio`, `dotenv`, `serde`, `tracing`, `tracing-subscriber`.
+   - Add mandatory dependencies: `axum`, `toasty` (postgresql feature), `tokio`, `dotenv`, `serde`, `tracing`, `tracing-subscriber`, `jsonwebtoken`.
 
 2. **Create baseline structure**
    - `src/domain/` for pure business models and rules.
@@ -40,9 +41,13 @@ If any required input is missing, ask a short clarifying question first.
 
 3. **Wire runtime**
    - Load config via `dotenv` + environment-backed config module (no inline secrets).
+   - Include JWT config from env (`JWT_SECRET`; optional `JWT_EXPIRATION_SECONDS` if issuing tokens).
    - Build app state and dependency graph in one bootstrap location.
    - Add graceful startup log with service name and bind address.
    - Build Axum router with fallback route and panic-safe middleware.
+   - Add `presentation/http/middleware/jwt.rs` and `mod.rs` with bearer-token validation middleware.
+   - Protect private routes by applying JWT middleware with `axum::middleware::from_fn_with_state`.
+   - Return `401` + `WWW-Authenticate: Bearer` on missing/invalid token.
    - Connect `toasty::Db` to PostgreSQL in infrastructure/bootstrap layer.
    - Register ORM models in `Db::builder().models(...)` using infra model types only.
    - Keep DB URL in env-backed config (for example `DATABASE_URL`), not hardcoded literals.
@@ -78,17 +83,21 @@ Use this response structure after implementation:
 Created new service scaffold and baseline wiring.
 
 Changed files:
+
 - <service>/Cargo.toml: dependencies and package metadata
 - <service>/src/main.rs: runtime entrypoint
 - <service>/src/...: domain/application/infrastructure/presentation scaffolding
 
 What is ready:
+
 - Runnable startup path
 - Axum + Toasty + PostgreSQL + dotenv wiring
 - Typed error flow and safe mapping
+- JWT middleware for protected routes
 - Baseline tests
 
 Verification:
+
 - `cargo fmt --all`
 - `cargo check -p <service-name>`
 - `cargo test -p <service-name>`
