@@ -1,24 +1,18 @@
 ---
-description: Rust Onion Architecture conventions
-globs: *-service/**/*.rs
+description: Rust service architecture and dependency boundaries
+globs: **/*-service/**/*.rs
 alwaysApply: false
 ---
 
 # Rust Onion Architecture
 
-- Use Onion Architecture with dependency flow inward only.
-- Layer responsibilities:
-  - `domain`: entities, value objects, domain services, and pure business rules.
-  - `application`: use cases, orchestration, and ports/interfaces for external dependencies.
-  - `infrastructure`: adapters for DB, HTTP clients, queues, and framework integrations.
-  - `presentation`: transport concerns such as HTTP handlers, DTO mapping, and request/response parsing.
-- Enforce dependency rule:
-  - `domain` depends on nothing external.
-  - `application` can depend on `domain`.
-  - `infrastructure` and `presentation` can depend on `application`/`domain`.
-  - Outer layers must not leak framework/DB types into inner layers.
-- Keep persistence/query methods (ORM “active record” style) in `infrastructure` models; repositories adapt those models to `domain` entities.
-- Keep functions small and names explicit; optimize for readability first.
-- Avoid `unwrap()` and `expect()` in production paths; propagate typed errors with context.
-- Validate inputs at boundaries (HTTP handlers, config loaders, repository adapters).
-- Keep business rules in `domain`/`application`; keep framework or DB details in `infrastructure`.
+- Enforce one-way dependency flow: `presentation`/`infrastructure` -> `application` -> `domain`.
+- Keep layer ownership strict:
+  - `domain`: pure business rules and types, no framework/DB imports.
+  - `application`: use-cases, orchestration, and ports (traits/interfaces).
+  - `infrastructure`: DB/API/queue adapters that implement ports.
+  - `presentation`: transport DTOs, parsing, and response mapping only.
+- Do not leak ORM/framework types into `domain` or `application`.
+- Keep `domain` free from IO side effects; inject dependencies through ports.
+- Validate boundary input early and map to typed domain/application models.
+- Prefer small, composable functions and explicit naming over clever abstractions.

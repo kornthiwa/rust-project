@@ -1,12 +1,13 @@
 ---
-description: Security baseline and safe handling rules
+description: Mandatory security safeguards for all tasks
 alwaysApply: true
 ---
 
 # Security Baseline
 
 - Never expose secrets, tokens, private keys, or credentials in code or logs.
-- Do not read or write `.env` files unless explicitly requested by the user.
-- Treat external input as untrusted; require validation and explicit error handling.
-- Avoid destructive commands unless the user clearly requests them.
-- Flag risky operations and present safer alternatives first.
+- Never read or modify `.env` or secret-bearing files unless explicitly requested.
+- Treat all external input as untrusted; validate at boundaries and fail safely.
+- Do not leak internal errors to clients; return sanitized messages and log context safely.
+- Avoid destructive commands unless explicitly requested; present safer alternatives first.
+- Redact sensitive values in examples, screenshots, logs, and test fixtures.

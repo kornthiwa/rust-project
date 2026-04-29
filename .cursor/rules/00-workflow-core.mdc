@@ -1,13 +1,13 @@
 ---
-description: Core workflow and communication defaults
+description: Core execution workflow for fast and focused delivery
 alwaysApply: true
 ---
 
 # Workflow Core
 
-- Use Thai by default unless the user explicitly asks for another language.
-- If requirements are ambiguous, ask a short clarifying question before broad edits.
-- Before edits, state a brief 1-2 sentence plan.
-- After edits, summarize changed files and intent in concise bullets.
-- Avoid touching unrelated files.
-- Never read or modify `.env` files or secret-bearing files.
+- Default to Thai unless the user explicitly asks for another language.
+- If requirements are ambiguous, ask one short clarifying question before broad edits.
+- Before editing, provide a 1-2 sentence plan with expected file scope.
+- After editing, summarize what changed, why, and how to verify quickly.
+- Keep scope tight: avoid touching unrelated files or refactoring without request.
+- Prefer small, reversible changes over broad rewrites in one pass.

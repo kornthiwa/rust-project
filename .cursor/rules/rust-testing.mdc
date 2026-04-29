@@ -1,13 +1,14 @@
 ---
-description: Rust testing expectations for feature work
-globs: *-service/**/*.rs
+description: Testing expectations for Rust service changes
+globs: **/*-service/**/*.rs
 alwaysApply: false
 ---
 
 # Rust Testing
 
-- Add unit tests for new business logic and bug fixes.
-- Cover at least one happy path and one failure path for critical use cases.
-- Prefer deterministic tests with explicit setup and assertions.
-- Keep integration tests focused on behavior, not internal implementation details.
-- When tests are not feasible, explain the reason and provide manual verification steps.
+- Add or update tests for every business logic change and bug fix.
+- For critical flows, cover at least one success case and one failure case.
+- Prefer deterministic tests: explicit fixtures, no hidden global state, stable timing.
+- Keep integration tests behavior-focused; avoid asserting internal implementation details.
+- Add regression tests for previously reported bugs when reproducible.
+- If tests are infeasible, document why and provide concise manual verification steps.
