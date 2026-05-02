@@ -1,7 +1,7 @@
 use async_trait::async_trait;
+use chrono::Utc;
 use toasty::Db;
 use uuid::Uuid;
-use chrono::Utc;
 
 use crate::domain::account::entity::Account;
 use crate::domain::account::repository::AccountRepository;
@@ -28,7 +28,7 @@ impl AccountRepository for PostgresAccountRepository {
         let models = AccountModel::all().exec(&mut db).await?;
         Ok(models.into_iter().map(Into::into).collect())
     }
-    
+
     async fn find_by_id(&self, account_id: u64) -> toasty::Result<Option<Account>> {
         let mut db = self.db.clone();
         let model = AccountModel::filter_by_id(account_id)

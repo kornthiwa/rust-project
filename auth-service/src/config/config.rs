@@ -1,5 +1,5 @@
-use std::env;
 use dotenv::dotenv;
+use std::env;
 
 #[derive(Debug)]
 pub enum ConfigError {
@@ -35,14 +35,18 @@ fn default_trimmed(name: &'static str, default: &'static str) -> Result<String, 
 
 fn parse_i64_default(name: &'static str, default: i64) -> Result<i64, ConfigError> {
     match env::var(name) {
-        Ok(raw) => raw.parse::<i64>().map_err(|_| ConfigError::InvalidEnv(name)),
+        Ok(raw) => raw
+            .parse::<i64>()
+            .map_err(|_| ConfigError::InvalidEnv(name)),
         Err(_) => Ok(default),
     }
 }
 
 fn parse_u16_default(name: &'static str, default: u16) -> Result<u16, ConfigError> {
     match env::var(name) {
-        Ok(raw) => raw.parse::<u16>().map_err(|_| ConfigError::InvalidEnv(name)),
+        Ok(raw) => raw
+            .parse::<u16>()
+            .map_err(|_| ConfigError::InvalidEnv(name)),
         Err(_) => Ok(default),
     }
 }

@@ -1,13 +1,13 @@
 use axum::{
     Json, Router,
+    extract::rejection::JsonRejection,
     extract::{Path, State},
     http::StatusCode,
-    extract::rejection::JsonRejection,
     routing::get,
 };
 
-use crate::application::account::service::{CreateAccountInput, UpdateAccountInput};
 use crate::app::AppState;
+use crate::application::account::service::{CreateAccountInput, UpdateAccountInput};
 use crate::domain::account::entity::Account;
 use crate::presentation::http::error::{ApiError, HttpResult};
 
@@ -80,7 +80,10 @@ async fn delete_account(
 ) -> HttpResult<StatusCode> {
     match state.account_service.delete_account(account_id).await {
         Ok(true) => Ok(StatusCode::NO_CONTENT),
-        Ok(false) => Err(ApiError::not_found("account_not_found", "account not found")),
+        Ok(false) => Err(ApiError::not_found(
+            "account_not_found",
+            "account not found",
+        )),
         Err(error) => Err(ApiError::from(error)),
     }
 }

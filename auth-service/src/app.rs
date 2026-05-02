@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
+use axum::Router;
 use axum::body::Body;
 use axum::http::Request;
-use axum::Router;
 use axum::middleware;
 use axum::middleware::Next;
 use axum::response::Response;
@@ -17,10 +17,7 @@ use crate::domain::account::repository::AccountRepository;
 use crate::infrastructure::account::account_model::AccountModel;
 use crate::infrastructure::account::postgres_repository::PostgresAccountRepository;
 use crate::presentation::http::{
-    account_handler,
-    auth_handler,
-    error::ApiError,
-    middleware::jwt_auth_middleware,
+    account_handler, auth_handler, error::ApiError, middleware::jwt_auth_middleware,
 };
 
 #[derive(Clone)]
@@ -31,19 +28,21 @@ pub struct AppState {
 
 pub async fn build_router(app_config: &AppConfig) -> toasty::Result<Router> {
     let state = build_app_state(app_config).await?;
-    let protected_account_router = account_handler::routes()
-        .layer(middleware::from_fn_with_state(
-            state.clone(),
-            jwt_auth_middleware,
-        ));
 
-    let auth_router = Router::new()
+    let protected_account_router = account_handler::routes().layer(middleware::from_fn_with_state(
+        state.clone(),
+        jwt_auth_middleware,
+    ));
+
+    let auth_branch = Router::new()
         .route("/", get(root))
         .merge(auth_handler::routes())
         .nest("/accounts", protected_account_router);
 
+    let api_v1_router = Router::new().nest("/auth", auth_branch);
+
     Ok(Router::new()
-        .nest("/auth", auth_router)
+        .nest("/api/v1", api_v1_router)
         .fallback(fallback_handler)
         .layer(CatchPanicLayer::new())
         .layer(middleware::from_fn(print_called_path))
@@ -51,10 +50,11 @@ pub async fn build_router(app_config: &AppConfig) -> toasty::Result<Router> {
 }
 
 async fn build_app_state(app_config: &AppConfig) -> toasty::Result<AppState> {
-    let db: Db = Db::builder()
+    let db = Db::builder()
         .models(toasty::models!(AccountModel))
         .connect(&app_config.database_url)
         .await?;
+
     if let Err(error) = db.push_schema().await {
         let error_message = error.to_string();
         if !error_message.contains("already exists") {
@@ -79,7 +79,7 @@ async fn build_app_state(app_config: &AppConfig) -> toasty::Result<AppState> {
 }
 
 async fn root() -> &'static str {
-    "hello"
+    "auth-service is up"
 }
 
 async fn print_called_path(req: Request<Body>, next: Next) -> Response {

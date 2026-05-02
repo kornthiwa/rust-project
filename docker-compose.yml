@@ -2,8 +2,9 @@ name: rust-stack
 
 # Local development infrastructure for all services.
 # Host connection examples:
-# - auth-db:    postgres://admin:admin1234@localhost:5432/auth_service
-# - users-db:   postgres://admin:admin1234@localhost:5433/users_service
+# - auth-db:      postgres://admin:admin1234@localhost:5432/auth_service
+# - users-db:     postgres://admin:admin1234@localhost:5433/users_service
+# - products-db:  postgres://admin:admin1234@localhost:5434/products_service
 
 services:
   auth-db:
@@ -46,6 +47,26 @@ services:
     networks:
       - backend
 
+  products-db:
+    image: postgres:16-alpine
+    container_name: rust-stack-products-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: products_service
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin1234
+    ports:
+      - "5434:5432"
+    volumes:
+      - products_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d products_service"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - backend
+
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: rust-stack-pgadmin
@@ -54,6 +75,8 @@ services:
       auth-db:
         condition: service_healthy
       users-db:
+        condition: service_healthy
+      products-db:
         condition: service_healthy
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@local.dev
@@ -68,6 +91,7 @@ services:
 volumes:
   auth_db_data:
   users_db_data:
+  products_db_data:
   pgadmin_data:
 
 networks:

@@ -71,12 +71,10 @@ impl IntoResponse for ApiError {
         };
         let mut response = (self.status, Json(body)).into_response();
         if self.status == StatusCode::UNAUTHORIZED {
-            response.headers_mut().insert(
-                header::WWW_AUTHENTICATE,
-                HeaderValue::from_static("Bearer"),
-            );
+            response
+                .headers_mut()
+                .insert(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
         }
         response
     }
 }
-

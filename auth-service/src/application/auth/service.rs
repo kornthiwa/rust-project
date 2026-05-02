@@ -48,10 +48,16 @@ impl AuthService {
 
     pub async fn register(&self, username: String, password: String) -> Result<Account, AppError> {
         if username.trim().is_empty() {
-            return Err(AppError::validation("invalid_input", "username is required"));
+            return Err(AppError::validation(
+                "invalid_input",
+                "username is required",
+            ));
         }
         if password.trim().is_empty() {
-            return Err(AppError::validation("invalid_input", "password is required"));
+            return Err(AppError::validation(
+                "invalid_input",
+                "password is required",
+            ));
         }
 
         let existing = self
@@ -60,13 +66,23 @@ impl AuthService {
             .await
             .map_err(|err| AppError::internal_with_source("repository_error", err.to_string()))?;
         if existing.is_some() {
-            return Err(AppError::conflict("username_taken", "username already exists"));
+            return Err(AppError::conflict(
+                "username_taken",
+                "username already exists",
+            ));
         }
 
-        let password_hash =
-            hash_password(&password).map_err(|_| AppError::validation("invalid_input", "invalid password"))?;
+        let password_hash = hash_password(&password)
+            .map_err(|_| AppError::validation("invalid_input", "invalid password"))?;
         self.repository
-            .create(username, password_hash, String::from("active"), 0, None, None)
+            .create(
+                username,
+                password_hash,
+                String::from("active"),
+                0,
+                None,
+                None,
+            )
             .await
             .map_err(|err| AppError::internal_with_source("repository_error", err.to_string()))
     }
@@ -86,12 +102,13 @@ impl AuthService {
             .map_err(|err| AppError::internal_with_source("repository_error", err.to_string()))?
             .ok_or_else(|| AppError::unauthorized("invalid_credentials", "invalid credentials"))?;
 
-        let is_password_valid =
-            verify_password(&password, &account.password_hash).map_err(|_| {
-                AppError::unauthorized("invalid_credentials", "invalid credentials")
-            })?;
+        let is_password_valid = verify_password(&password, &account.password_hash)
+            .map_err(|_| AppError::unauthorized("invalid_credentials", "invalid credentials"))?;
         if !is_password_valid {
-            return Err(AppError::unauthorized("invalid_credentials", "invalid credentials"));
+            return Err(AppError::unauthorized(
+                "invalid_credentials",
+                "invalid credentials",
+            ));
         }
 
         let claims = JwtClaims {

@@ -34,11 +34,10 @@ impl AccountService {
     }
 
     pub async fn list_accounts(&self) -> Result<Vec<Account>, AppError> {
-        let accounts = self
-            .repository
-            .list()
-            .await
-            .map_err(|err| AppError::internal_with_source("repository_error", err.to_string()))?;
+        let accounts =
+            self.repository.list().await.map_err(|err| {
+                AppError::internal_with_source("repository_error", err.to_string())
+            })?;
         println!("[MOCK CRUD] list accounts: {:?}", accounts);
         Ok(accounts)
     }
@@ -57,14 +56,7 @@ impl AccountService {
         let status = input.status.unwrap_or_else(|| "active".to_string());
         let account = self
             .repository
-            .create(
-                input.username,
-                input.password_hash,
-                status,
-                0,
-                None,
-                None,
-            )
+            .create(input.username, input.password_hash, status, 0, None, None)
             .await
             .map_err(|err| AppError::internal_with_source("repository_error", err.to_string()))?;
         println!("[MOCK CRUD] create account: {:?}", account);
@@ -76,18 +68,16 @@ impl AccountService {
         account_id: u64,
         input: UpdateAccountInput,
     ) -> Result<Option<Account>, AppError> {
-        let account = self
-            .repository
-            .update(
-                account_id,
-                input.username,
-                input.password_hash,
-                input.status,
-                input.failed_login_attempts,
-                input.locked_until,
-                input.last_login_at,
-                input.deleted_at,
-            );
+        let account = self.repository.update(
+            account_id,
+            input.username,
+            input.password_hash,
+            input.status,
+            input.failed_login_attempts,
+            input.locked_until,
+            input.last_login_at,
+            input.deleted_at,
+        );
         let account = account
             .await
             .map_err(|err| AppError::internal_with_source("repository_error", err.to_string()))?;
@@ -96,11 +86,10 @@ impl AccountService {
     }
 
     pub async fn delete_account(&self, account_id: u64) -> Result<bool, AppError> {
-        let is_deleted = self
-            .repository
-            .delete(account_id)
-            .await
-            .map_err(|err| AppError::internal_with_source("repository_error", err.to_string()))?;
+        let is_deleted =
+            self.repository.delete(account_id).await.map_err(|err| {
+                AppError::internal_with_source("repository_error", err.to_string())
+            })?;
         println!("[MOCK CRUD] delete account {}: {}", account_id, is_deleted);
         Ok(is_deleted)
     }

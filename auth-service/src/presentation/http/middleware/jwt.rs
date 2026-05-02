@@ -17,7 +17,9 @@ pub async fn jwt_auth_middleware(
         .headers()
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
-        .ok_or_else(|| ApiError::unauthorized("missing_authorization", "missing Authorization header"))?;
+        .ok_or_else(|| {
+            ApiError::unauthorized("missing_authorization", "missing Authorization header")
+        })?;
 
     let token = auth_header
         .strip_prefix("Bearer ")

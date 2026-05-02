@@ -30,12 +30,13 @@ pub async fn build_router(app_config: &AppConfig) -> toasty::Result<Router> {
         state.clone(),
         jwt_auth_middleware,
     ));
-    let api_router = Router::new()
+
+    let api_v1_router = Router::new()
         .route("/", get(root))
         .nest("/user", protected_user_router);
 
     Ok(Router::new()
-        .nest("/api", api_router)
+        .nest("/api/v1", api_v1_router)
         .fallback(fallback_handler)
         .layer(CatchPanicLayer::new())
         .layer(middleware::from_fn(print_called_path))
