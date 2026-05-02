@@ -67,6 +67,26 @@ services:
     networks:
       - backend
 
+  messages-db:
+    image: postgres:16-alpine
+    container_name: rust-stack-messages-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: messages_service
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin1234
+    ports:
+      - "5435:5432"
+    volumes:
+      - messages_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d messages_service"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - backend
+
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: rust-stack-pgadmin
@@ -77,6 +97,8 @@ services:
       users-db:
         condition: service_healthy
       products-db:
+        condition: service_healthy
+      messages-db:
         condition: service_healthy
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@local.dev
@@ -93,6 +115,7 @@ volumes:
   users_db_data:
   products_db_data:
   pgadmin_data:
+  messages_db_data:
 
 networks:
   backend:
