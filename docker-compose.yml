@@ -5,6 +5,7 @@ name: rust-stack
 # - auth-db:      postgres://admin:admin1234@localhost:5432/auth_service
 # - users-db:     postgres://admin:admin1234@localhost:5433/users_service
 # - products-db:  postgres://admin:admin1234@localhost:5434/products_service
+# - kafka:        localhost:9092 (rdkafka / librdkafka bootstrap.servers)
 
 services:
   auth-db:
@@ -87,6 +88,56 @@ services:
     networks:
       - backend
 
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.7.1
+    container_name: rust-stack-zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_logs:/var/lib/zookeeper/log
+    networks:
+      - backend
+
+  kafka:
+    image: confluentinc/cp-kafka:7.7.1
+    container_name: rust-stack-kafka
+    restart: unless-stopped
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 168
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 40s
+    networks:
+      - backend
+
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: rust-stack-pgadmin
@@ -116,6 +167,9 @@ volumes:
   products_db_data:
   pgadmin_data:
   messages_db_data:
+  zookeeper_data:
+  zookeeper_logs:
+  kafka_data:
 
 networks:
   backend:

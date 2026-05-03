@@ -12,9 +12,12 @@ dotenv = "0.15.0"
 jsonwebtoken = "9"
 rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+futures = "0.3"
 toasty = { version = "0.4.0", features = ["postgresql"] }
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tower-http = { version = "0.6", features = ["catch-panic"] }
+rdkafka = { version = "0.38", features = ["cmake-build"] }
