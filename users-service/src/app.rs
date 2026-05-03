@@ -7,14 +7,13 @@ use axum::middleware;
 use axum::middleware::Next;
 use axum::response::Response;
 use axum::routing::get;
-use toasty::Db;
+use sqlx::postgres::PgPoolOptions;
 use tower_http::catch_panic::CatchPanicLayer;
 
 use crate::application::user::service::UserService;
 use crate::config::config::AppConfig;
 use crate::domain::user::repository::UserRepository;
 use crate::infrastructure::user::postgres_repository::PostgresUserRepository;
-use crate::infrastructure::user::user_model::UserModel;
 use crate::presentation::http::{error::ApiError, middleware::jwt_auth_middleware, user_handler};
 
 #[derive(Clone)]
@@ -23,8 +22,15 @@ pub struct AppState {
     pub jwt_secret: Arc<String>,
 }
 
-pub async fn build_router(app_config: &AppConfig) -> toasty::Result<Router> {
-    let state = build_app_state(app_config).await?;
+pub async fn build_router(app_config: &AppConfig) -> Result<Router, sqlx::Error> {
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&app_config.database_url)
+        .await?;
+
+    sqlx::migrate!("./migrations").run(&pool).await?;
+
+    let state = build_app_state(app_config, pool);
 
     let protected_user_router = user_handler::routes().layer(middleware::from_fn_with_state(
         state.clone(),
@@ -43,26 +49,13 @@ pub async fn build_router(app_config: &AppConfig) -> toasty::Result<Router> {
         .with_state(state))
 }
 
-async fn build_app_state(app_config: &AppConfig) -> toasty::Result<AppState> {
-    let db = Db::builder()
-        .models(toasty::models!(UserModel))
-        .connect(&app_config.database_url)
-        .await?;
-
-    if let Err(error) = db.push_schema().await {
-        let error_message = error.to_string();
-        if !error_message.contains("already exists") {
-            return Err(error);
-        }
-        tracing::warn!("skip schema push: {}", error_message);
-    }
-
-    let user_repository: Arc<dyn UserRepository> = Arc::new(PostgresUserRepository::new(db));
+fn build_app_state(app_config: &AppConfig, pool: sqlx::PgPool) -> AppState {
+    let user_repository: Arc<dyn UserRepository> = Arc::new(PostgresUserRepository::new(pool));
     let user_service = Arc::new(UserService::new(user_repository));
-    Ok(AppState {
+    AppState {
         user_service,
         jwt_secret: Arc::new(app_config.jwt_secret.clone()),
-    })
+    }
 }
 
 async fn root() -> &'static str {

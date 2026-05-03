@@ -131,11 +131,11 @@ mod tests {
 
     #[async_trait]
     impl UserRepository for MockUserRepository {
-        async fn list(&self) -> toasty::Result<Vec<User>> {
+        async fn list(&self) -> Result<Vec<User>, sqlx::Error> {
             Ok(vec![sample_user()])
         }
 
-        async fn find_by_id(&self, user_id: u64) -> toasty::Result<Option<User>> {
+        async fn find_by_id(&self, user_id: u64) -> Result<Option<User>, sqlx::Error> {
             Ok((user_id == 1).then(sample_user))
         }
 
@@ -144,7 +144,7 @@ mod tests {
             email: String,
             display_name: String,
             is_active: bool,
-        ) -> toasty::Result<User> {
+        ) -> Result<User, sqlx::Error> {
             Ok(User {
                 id: 2,
                 public_id: "user_2".to_string(),
@@ -162,11 +162,11 @@ mod tests {
             _email: Option<String>,
             _display_name: Option<String>,
             _is_active: Option<bool>,
-        ) -> toasty::Result<Option<User>> {
+        ) -> Result<Option<User>, sqlx::Error> {
             Ok(None)
         }
 
-        async fn delete(&self, _user_id: u64) -> toasty::Result<bool> {
+        async fn delete(&self, _user_id: u64) -> Result<bool, sqlx::Error> {
             Ok(true)
         }
     }

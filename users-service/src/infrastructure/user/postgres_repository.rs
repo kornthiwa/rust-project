@@ -1,19 +1,43 @@
 use async_trait::async_trait;
 use chrono::Utc;
-use toasty::Db;
+use sqlx::{Error, FromRow, PgPool};
 use uuid::Uuid;
 
 use crate::domain::user::entity::User;
 use crate::domain::user::repository::UserRepository;
-use crate::infrastructure::user::user_model::UserModel;
+
+#[derive(Debug, FromRow)]
+struct UserRow {
+    id: i64,
+    public_id: String,
+    email: String,
+    display_name: String,
+    is_active: bool,
+    created_at: String,
+    updated_at: String,
+}
+
+impl From<UserRow> for User {
+    fn from(r: UserRow) -> Self {
+        Self {
+            id: r.id as u64,
+            public_id: r.public_id,
+            email: r.email,
+            display_name: r.display_name,
+            is_active: r.is_active,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+        }
+    }
+}
 
 pub struct PostgresUserRepository {
-    db: Db,
+    pool: PgPool,
 }
 
 impl PostgresUserRepository {
-    pub fn new(db: Db) -> Self {
-        Self { db }
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
     }
 
     fn now_timestamp() -> String {
@@ -23,19 +47,25 @@ impl PostgresUserRepository {
 
 #[async_trait]
 impl UserRepository for PostgresUserRepository {
-    async fn list(&self) -> toasty::Result<Vec<User>> {
-        let mut db = self.db.clone();
-        let models = UserModel::all().exec(&mut db).await?;
-        Ok(models.into_iter().map(Into::into).collect())
+    async fn list(&self) -> Result<Vec<User>, Error> {
+        let rows = sqlx::query_as::<_, UserRow>(
+            r#"SELECT id, public_id, email, display_name, is_active, created_at, updated_at
+               FROM user_models ORDER BY id"#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(Into::into).collect())
     }
 
-    async fn find_by_id(&self, user_id: u64) -> toasty::Result<Option<User>> {
-        let mut db = self.db.clone();
-        let model = UserModel::filter_by_id(user_id)
-            .first()
-            .exec(&mut db)
-            .await?;
-        Ok(model.map(Into::into))
+    async fn find_by_id(&self, user_id: u64) -> Result<Option<User>, Error> {
+        let row = sqlx::query_as::<_, UserRow>(
+            r#"SELECT id, public_id, email, display_name, is_active, created_at, updated_at
+               FROM user_models WHERE id = $1"#,
+        )
+        .bind(user_id as i64)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(Into::into))
     }
 
     async fn create(
@@ -43,22 +73,23 @@ impl UserRepository for PostgresUserRepository {
         email: String,
         display_name: String,
         is_active: bool,
-    ) -> toasty::Result<User> {
-        let mut db = self.db.clone();
+    ) -> Result<User, Error> {
         let now = Self::now_timestamp();
-
-        let model = toasty::create!(UserModel {
-            public_id: Uuid::new_v4().to_string(),
-            email,
-            display_name,
-            is_active,
-            created_at: now.clone(),
-            updated_at: now,
-        })
-        .exec(&mut db)
+        let public_id = Uuid::new_v4().to_string();
+        let row = sqlx::query_as::<_, UserRow>(
+            r#"INSERT INTO user_models (public_id, email, display_name, is_active, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING id, public_id, email, display_name, is_active, created_at, updated_at"#,
+        )
+        .bind(&public_id)
+        .bind(&email)
+        .bind(&display_name)
+        .bind(is_active)
+        .bind(&now)
+        .bind(&now)
+        .fetch_one(&self.pool)
         .await?;
-
-        Ok(model.into())
+        Ok(row.into())
     }
 
     async fn update(
@@ -67,46 +98,48 @@ impl UserRepository for PostgresUserRepository {
         email: Option<String>,
         display_name: Option<String>,
         is_active: Option<bool>,
-    ) -> toasty::Result<Option<User>> {
-        let mut db = self.db.clone();
-        let model = UserModel::filter_by_id(user_id)
-            .first()
-            .exec(&mut db)
-            .await?;
-        let Some(mut model) = model else {
+    ) -> Result<Option<User>, Error> {
+        let current = self.find_by_id(user_id).await?;
+        let Some(mut user) = current else {
             return Ok(None);
         };
+        if let Some(v) = email {
+            user.email = v;
+        }
+        if let Some(v) = display_name {
+            user.display_name = v;
+        }
+        if let Some(v) = is_active {
+            user.is_active = v;
+        }
+        user.updated_at = Self::now_timestamp();
 
-        let mut update = model.update();
-        if let Some(value) = email {
-            update = update.email(value);
-        }
-        if let Some(value) = display_name {
-            update = update.display_name(value);
-        }
-        if let Some(value) = is_active {
-            update = update.is_active(value);
-        }
-        update = update.updated_at(Self::now_timestamp());
-        update.exec(&mut db).await?;
-
-        let updated = UserModel::filter_by_id(user_id)
-            .first()
-            .exec(&mut db)
-            .await?;
-        Ok(updated.map(Into::into))
+        let row = sqlx::query_as::<_, UserRow>(
+            r#"UPDATE user_models SET
+                    email = $2,
+                    display_name = $3,
+                    is_active = $4,
+                    created_at = $5,
+                    updated_at = $6
+                WHERE id = $1
+                RETURNING id, public_id, email, display_name, is_active, created_at, updated_at"#,
+        )
+        .bind(user_id as i64)
+        .bind(&user.email)
+        .bind(&user.display_name)
+        .bind(user.is_active)
+        .bind(&user.created_at)
+        .bind(&user.updated_at)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(Into::into))
     }
 
-    async fn delete(&self, user_id: u64) -> toasty::Result<bool> {
-        let mut db = self.db.clone();
-        let model = UserModel::filter_by_id(user_id)
-            .first()
-            .exec(&mut db)
+    async fn delete(&self, user_id: u64) -> Result<bool, Error> {
+        let result = sqlx::query(r#"DELETE FROM user_models WHERE id = $1"#)
+            .bind(user_id as i64)
+            .execute(&self.pool)
             .await?;
-        let Some(model) = model else {
-            return Ok(false);
-        };
-        model.delete().exec(&mut db).await?;
-        Ok(true)
+        Ok(result.rows_affected() > 0)
     }
 }

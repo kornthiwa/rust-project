@@ -1,12 +1,13 @@
 use async_trait::async_trait;
+use sqlx::Error;
 
 use crate::domain::account::entity::Account;
 
 #[async_trait]
 pub trait AccountRepository: Send + Sync {
-    async fn list(&self) -> toasty::Result<Vec<Account>>;
-    async fn find_by_id(&self, account_id: u64) -> toasty::Result<Option<Account>>;
-    async fn find_by_username(&self, username: &str) -> toasty::Result<Option<Account>>;
+    async fn list(&self) -> Result<Vec<Account>, Error>;
+    async fn find_by_id(&self, account_id: u64) -> Result<Option<Account>, Error>;
+    async fn find_by_username(&self, username: &str) -> Result<Option<Account>, Error>;
     async fn create(
         &self,
         username: String,
@@ -15,7 +16,7 @@ pub trait AccountRepository: Send + Sync {
         failed_login_attempts: i32,
         locked_until: Option<String>,
         last_login_at: Option<String>,
-    ) -> toasty::Result<Account>;
+    ) -> Result<Account, Error>;
     async fn update(
         &self,
         account_id: u64,
@@ -26,6 +27,6 @@ pub trait AccountRepository: Send + Sync {
         locked_until: Option<String>,
         last_login_at: Option<String>,
         deleted_at: Option<String>,
-    ) -> toasty::Result<Option<Account>>;
-    async fn delete(&self, account_id: u64) -> toasty::Result<bool>;
+    ) -> Result<Option<Account>, Error>;
+    async fn delete(&self, account_id: u64) -> Result<bool, Error>;
 }

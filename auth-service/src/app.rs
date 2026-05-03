@@ -7,14 +7,13 @@ use axum::middleware;
 use axum::middleware::Next;
 use axum::response::Response;
 use axum::routing::get;
-use toasty::Db;
+use sqlx::postgres::PgPoolOptions;
 use tower_http::catch_panic::CatchPanicLayer;
 
 use crate::application::account::service::AccountService;
 use crate::application::auth::service::AuthService;
 use crate::config::config::AppConfig;
 use crate::domain::account::repository::AccountRepository;
-use crate::infrastructure::account::account_model::AccountModel;
 use crate::infrastructure::account::postgres_repository::PostgresAccountRepository;
 use crate::presentation::http::{
     account_handler, auth_handler, error::ApiError, middleware::jwt_auth_middleware,
@@ -26,8 +25,15 @@ pub struct AppState {
     pub auth_service: Arc<AuthService>,
 }
 
-pub async fn build_router(app_config: &AppConfig) -> toasty::Result<Router> {
-    let state = build_app_state(app_config).await?;
+pub async fn build_router(app_config: &AppConfig) -> Result<Router, sqlx::Error> {
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&app_config.database_url)
+        .await?;
+
+    sqlx::migrate!("./migrations").run(&pool).await?;
+
+    let state = build_app_state(app_config, pool);
 
     let protected_account_router = account_handler::routes().layer(middleware::from_fn_with_state(
         state.clone(),
@@ -49,21 +55,8 @@ pub async fn build_router(app_config: &AppConfig) -> toasty::Result<Router> {
         .with_state(state))
 }
 
-async fn build_app_state(app_config: &AppConfig) -> toasty::Result<AppState> {
-    let db = Db::builder()
-        .models(toasty::models!(AccountModel))
-        .connect(&app_config.database_url)
-        .await?;
-
-    if let Err(error) = db.push_schema().await {
-        let error_message = error.to_string();
-        if !error_message.contains("already exists") {
-            return Err(error);
-        }
-        tracing::warn!("skip schema push: {}", error_message);
-    }
-
-    let postgres_repository = PostgresAccountRepository::new(db);
+fn build_app_state(app_config: &AppConfig, pool: sqlx::PgPool) -> AppState {
+    let postgres_repository = PostgresAccountRepository::new(pool);
     let account_repository: Arc<dyn AccountRepository> = Arc::new(postgres_repository);
     let account_service = Arc::new(AccountService::new(Arc::clone(&account_repository)));
     let auth_service = Arc::new(AuthService::new(
@@ -72,10 +65,10 @@ async fn build_app_state(app_config: &AppConfig) -> toasty::Result<AppState> {
         app_config.jwt_expiration_seconds,
     ));
 
-    Ok(AppState {
+    AppState {
         account_service,
         auth_service,
-    })
+    }
 }
 
 async fn root() -> &'static str {

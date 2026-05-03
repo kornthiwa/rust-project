@@ -1,6 +1,6 @@
 ---
 name: create-service
-description: Creates a new Rust *-service with mandatory axum, toasty, postgresql, and dotenv baseline setup, plus onion architecture folders, wiring, error mapping, and verification steps. Use when the user asks to create a new service, bootstrap a microservice, or set up service scaffolding end-to-end.
+description: Creates a new Rust *-service with mandatory axum, sqlx (PostgreSQL), migrations, and dotenv baseline setup, plus onion architecture folders, wiring, error mapping, and verification steps. Use when the user asks to create a new service, bootstrap a microservice, or set up service scaffolding end-to-end.
 ---
 
 # Create Service
@@ -30,7 +30,7 @@ If any required input is missing, ask a short clarifying question first.
 1. **Create project**
    - Create crate at repo root: `<name>-service/`.
    - Use Rust 2024 edition.
-   - Add mandatory dependencies: `axum`, `toasty` (postgresql feature), `tokio`, `dotenv`, `serde`, `tracing`, `tracing-subscriber`, `jsonwebtoken`.
+   - Add mandatory dependencies: `axum`, `sqlx` (features: `runtime-tokio`, `postgres`, `migrate`, `macros` — align with existing services; add TLS features only if required), `tokio`, `dotenv`, `serde`, `tracing`, `tracing-subscriber`, `jsonwebtoken` when auth is needed.
 
 2. **Create baseline structure**
    - `src/domain/` for pure business models and rules.
@@ -48,8 +48,9 @@ If any required input is missing, ask a short clarifying question first.
    - Add `presentation/http/middleware/jwt.rs` and `mod.rs` with bearer-token validation middleware.
    - Protect private routes by applying JWT middleware with `axum::middleware::from_fn_with_state`.
    - Return `401` + `WWW-Authenticate: Bearer` on missing/invalid token.
-   - Connect `toasty::Db` to PostgreSQL in infrastructure/bootstrap layer.
-   - Register ORM models in `Db::builder().models(...)` using infra model types only.
+   - Connect **`sqlx::PgPool`** to PostgreSQL via `PgPoolOptions::connect` using env-backed `DATABASE_URL`.
+   - Add **`migrations/`** at the crate root with an initial SQL migration (`CREATE TABLE ...`); run `sqlx::migrate!("./migrations").run(&pool).await?` once after connect (same pattern as `auth-service`, `users-service`, `messages-service`).
+   - Implement repositories with `sqlx::query` / `query_as` + `FromRow` row types in `infrastructure` only; map rows to domain entities at the repository boundary.
    - Keep DB URL in env-backed config (for example `DATABASE_URL`), not hardcoded literals.
 
 4. **Add error strategy**
@@ -70,7 +71,7 @@ If any required input is missing, ask a short clarifying question first.
 
 - Do not read or modify `.env` unless user explicitly requests it.
 - Do not leak secrets/tokens in code samples or logs.
-- Keep ORM/framework types out of `domain`.
+- Keep `sqlx` / `PgPool` / row types out of `domain`.
 - Avoid `unwrap()`/`expect()` in production paths.
 - Do not edit unrelated services unless user asks.
 - Do not scaffold alternate persistence stacks unless user explicitly overrides this baseline.
@@ -87,13 +88,14 @@ Changed files:
 - <service>/Cargo.toml: dependencies and package metadata
 - <service>/src/main.rs: runtime entrypoint
 - <service>/src/...: domain/application/infrastructure/presentation scaffolding
+- <service>/migrations/: initial SQL migration
 
 What is ready:
 
 - Runnable startup path
-- Axum + Toasty + PostgreSQL + dotenv wiring
+- Axum + sqlx (PostgreSQL) + migrations + dotenv wiring
 - Typed error flow and safe mapping
-- JWT middleware for protected routes
+- JWT middleware for protected routes (if applicable)
 - Baseline tests
 
 Verification:

@@ -108,7 +108,7 @@ mod tests {
             conversation_id: String,
             author_subject: String,
             body: String,
-        ) -> toasty::Result<Message> {
+        ) -> Result<Message, sqlx::Error> {
             Ok(Message {
                 id: 1,
                 public_id: "msg_1".to_string(),
@@ -119,14 +119,14 @@ mod tests {
             })
         }
 
-        async fn find_by_id(&self, _message_id: u64) -> toasty::Result<Option<Message>> {
+        async fn find_by_id(&self, _message_id: u64) -> Result<Option<Message>, sqlx::Error> {
             Ok(None)
         }
 
         async fn list_by_conversation(
             &self,
             _conversation_id: &str,
-        ) -> toasty::Result<Vec<Message>> {
+        ) -> Result<Vec<Message>, sqlx::Error> {
             Ok(vec![])
         }
     }

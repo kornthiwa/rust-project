@@ -12,7 +12,7 @@ alwaysApply: false
   - `application`: use-cases, orchestration, and ports (traits/interfaces).
   - `infrastructure`: DB/API/queue adapters that implement ports.
   - `presentation`: transport DTOs, parsing, and response mapping only.
-- Do not leak ORM/framework types into `domain` or `application`.
+- Do not leak DB driver / SQL client types (`PgPool`, `sqlx::Error`, row types tied to the DB) into `domain`; keep them inside `infrastructure` adapters. Application ports should expose domain- or app-level errors unless the team standard explicitly uses a shared infra error type.
 - Keep `domain` free from IO side effects; inject dependencies through ports.
 - Validate boundary input early and map to typed domain/application models.
 - Prefer small, composable functions and explicit naming over clever abstractions.

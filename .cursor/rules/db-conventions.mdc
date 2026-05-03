@@ -1,16 +1,16 @@
 ---
-description: Database and ORM boundaries for Rust services
+description: Database and SQL persistence boundaries for Rust services
 globs: **/*-service/**/*.rs
 alwaysApply: false
 ---
 
 # DB Conventions
 
-- Use PostgreSQL + `toasty` as default persistence stack unless explicitly overridden.
-- Keep all DB wiring and ORM models in `infrastructure` only.
-- Map ORM models to domain entities at repository boundaries.
-- Do not place ORM derives/traits in `domain` entities.
-- In `Db::builder().models(...)`, register only ORM model types.
+- Use **PostgreSQL + sqlx** (`PgPool`, `sqlx::query` / `query_as`, optional `sqlx::migrate!`) as the default persistence stack unless explicitly overridden.
+- Keep **pool wiring, migrations, and SQL row/DTO types** under `infrastructure` only (e.g. `infrastructure/**/postgres_repository.rs`, crate-root `migrations/*.sql`).
+- Map **infra row structs** (e.g. `sqlx::FromRow`) to **domain entities** at repository boundaries; domain entities stay free of `sqlx` imports.
+- Do not put `sqlx::FromRow`, `PgPool`, or DB-specific derives on `domain` types.
+- Run **`sqlx::migrate!(...)`** (or an equivalent documented migration path) from a single bootstrap location after `PgPool::connect`; keep migration files versioned under each service’s `migrations/` folder.
 - Generate IDs/timestamps in one consistent layer (repository/adapter), not handlers.
 - Keep connection/config values centralized; avoid inline literals in use-cases/handlers.
-- Return persistence errors with context and preserve original cause for observability.
+- Return persistence errors with context and preserve original cause for observability (e.g. map `sqlx::Error` in the adapter or expose it only where the port contract allows).

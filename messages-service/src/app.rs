@@ -7,13 +7,12 @@ use axum::middleware;
 use axum::middleware::Next;
 use axum::response::Response;
 use axum::routing::get;
-use toasty::Db;
+use sqlx::postgres::PgPoolOptions;
 use tower_http::catch_panic::CatchPanicLayer;
 
 use crate::application::message::service::MessageService;
 use crate::config::config::AppConfig;
 use crate::domain::message::repository::MessageRepository;
-use crate::infrastructure::message::message_model::MessageModel;
 use crate::infrastructure::message::postgres_repository::PostgresMessageRepository;
 use crate::presentation::http::{
     error::ApiError, message_handler, middleware::jwt_auth_middleware,
@@ -25,8 +24,15 @@ pub struct AppState {
     pub jwt_secret: Arc<String>,
 }
 
-pub async fn build_router(app_config: &AppConfig) -> toasty::Result<Router> {
-    let state = build_app_state(app_config).await?;
+pub async fn build_router(app_config: &AppConfig) -> Result<Router, sqlx::Error> {
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&app_config.database_url)
+        .await?;
+
+    sqlx::migrate!("./migrations").run(&pool).await?;
+
+    let state = build_app_state(app_config, pool);
 
     let protected_messages_router = message_handler::routes().layer(
         middleware::from_fn_with_state(state.clone(), jwt_auth_middleware),
@@ -44,27 +50,14 @@ pub async fn build_router(app_config: &AppConfig) -> toasty::Result<Router> {
         .with_state(state))
 }
 
-async fn build_app_state(app_config: &AppConfig) -> toasty::Result<AppState> {
-    let db = Db::builder()
-        .models(toasty::models!(MessageModel))
-        .connect(&app_config.database_url)
-        .await?;
-
-    if let Err(error) = db.push_schema().await {
-        let error_message = error.to_string();
-        if !error_message.contains("already exists") {
-            return Err(error);
-        }
-        tracing::warn!("skip schema push: {}", error_message);
-    }
-
+fn build_app_state(app_config: &AppConfig, pool: sqlx::PgPool) -> AppState {
     let message_repository: Arc<dyn MessageRepository> =
-        Arc::new(PostgresMessageRepository::new(db));
+        Arc::new(PostgresMessageRepository::new(pool));
     let message_service = Arc::new(MessageService::new(message_repository));
-    Ok(AppState {
+    AppState {
         message_service,
         jwt_secret: Arc::new(app_config.jwt_secret.clone()),
-    })
+    }
 }
 
 async fn root() -> &'static str {
