@@ -12,27 +12,31 @@ impl From<JsonRejection> for ApiError {
 impl From<AppError> for ApiError {
     fn from(error: AppError) -> Self {
         match error {
-            AppError::Validation { code, message } => ApiError {
-                status: axum::http::StatusCode::BAD_REQUEST,
+            AppError::Validation { code, message } => {
+                ApiError::bad_request(code, message.unwrap_or_default())
+            }
+            AppError::Unauthorized { code, message } => {
+                ApiError::unauthorized(code, message.unwrap_or_default())
+            }
+            AppError::NotFound { code, message } => {
+                ApiError::not_found(code, message.unwrap_or_default())
+            }
+            AppError::Conflict { code, message } => {
+                ApiError::conflict(code, message.unwrap_or_default())
+            }
+            AppError::Internal {
                 code,
                 message,
-            },
-            AppError::Unauthorized { code, message } => ApiError {
-                status: axum::http::StatusCode::UNAUTHORIZED,
-                code,
-                message,
-            },
-            AppError::NotFound { code, message } => ApiError {
-                status: axum::http::StatusCode::NOT_FOUND,
-                code,
-                message,
-            },
-            AppError::Conflict { code, message } => ApiError {
-                status: axum::http::StatusCode::CONFLICT,
-                code,
-                message,
-            },
-            AppError::Internal { code, .. } => ApiError::internal(code),
+                source,
+            } => {
+                tracing::error!(
+                    app_error_code = code,
+                    message = ?message,
+                    source = ?source,
+                    "internal application error"
+                );
+                ApiError::internal(code)
+            }
         }
     }
 }

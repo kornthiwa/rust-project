@@ -8,6 +8,7 @@ use axum::{
 
 use crate::app::AppState;
 use crate::application::account::service::{CreateAccountInput, UpdateAccountInput};
+use crate::application::error::AppError;
 use crate::domain::account::entity::Account;
 use crate::presentation::http::error::{ApiError, HttpResult};
 
@@ -39,7 +40,8 @@ async fn get_account(
         .get_account(account_id)
         .await
         .map_err(ApiError::from)?
-        .ok_or_else(|| ApiError::not_found("account_not_found", "account not found"))?;
+        .ok_or_else(|| AppError::not_found("account_not_found", "account not found"))
+        .map_err(ApiError::from)?;
 
     Ok(Json(account))
 }
@@ -69,7 +71,8 @@ async fn update_account(
         .update_account(account_id, input)
         .await
         .map_err(ApiError::from)?
-        .ok_or_else(|| ApiError::not_found("account_not_found", "account not found"))?;
+        .ok_or_else(|| AppError::not_found("account_not_found", "account not found"))
+        .map_err(ApiError::from)?;
 
     Ok(Json(account))
 }
@@ -80,10 +83,9 @@ async fn delete_account(
 ) -> HttpResult<StatusCode> {
     match state.account_service.delete_account(account_id).await {
         Ok(true) => Ok(StatusCode::NO_CONTENT),
-        Ok(false) => Err(ApiError::not_found(
-            "account_not_found",
-            "account not found",
-        )),
+        Ok(false) => Err(
+            AppError::not_found("account_not_found", "account not found").into(),
+        ),
         Err(error) => Err(ApiError::from(error)),
     }
 }
