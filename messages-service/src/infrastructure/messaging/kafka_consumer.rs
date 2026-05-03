@@ -1,13 +1,21 @@
+use std::sync::Arc;
+
 use futures::StreamExt;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::message::Message;
 
+use crate::application::ports::{
+    ConsumedAuthEvent, MessageEvent, MessagingInboundHandlerRef,
+};
 use crate::config::config::AppConfig;
 
 use super::kafka_admin::{ensure_auth_events_topic, ensure_message_events_topic};
 use super::kafka_client::base_client_config;
 
-pub async fn spawn_message_event_consumer_if_enabled(config: &AppConfig) {
+pub async fn spawn_message_event_consumer_if_enabled(
+    config: &AppConfig,
+    messaging_inbound_handler: MessagingInboundHandlerRef,
+) {
     if !config.kafka_enabled {
         return;
     }
@@ -53,6 +61,7 @@ pub async fn spawn_message_event_consumer_if_enabled(config: &AppConfig) {
         return;
     }
 
+    let messaging_inbound_handler = Arc::clone(&messaging_inbound_handler);
     tokio::spawn(async move {
         tracing::info!(
             service = "messages-service",
@@ -69,21 +78,43 @@ pub async fn spawn_message_event_consumer_if_enabled(config: &AppConfig) {
                         .map(|p| String::from_utf8_lossy(p).into_owned())
                         .unwrap_or_default();
                     let t = msg.topic();
-                    let kind = if t == message_topic.as_str() {
-                        "message_event"
+                    if t == message_topic.as_str() {
+                        match serde_json::from_str::<MessageEvent>(&body) {
+                            Ok(event) => {
+                                if let Err(e) =
+                                    messaging_inbound_handler.on_message_event(event).await
+                                {
+                                    tracing::warn!(error = %e, "message_event_inbound error");
+                                }
+                            }
+                            Err(e) => tracing::warn!(
+                                error = %e,
+                                topic = t,
+                                partition = msg.partition(),
+                                offset = msg.offset(),
+                                "invalid message event payload"
+                            ),
+                        }
                     } else if t == auth_topic.as_str() {
-                        "auth_event"
+                        match serde_json::from_str::<ConsumedAuthEvent>(&body) {
+                            Ok(event) => {
+                                if let Err(e) =
+                                    messaging_inbound_handler.on_auth_event(event).await
+                                {
+                                    tracing::warn!(error = %e, "auth_feed_inbound error");
+                                }
+                            }
+                            Err(e) => tracing::warn!(
+                                error = %e,
+                                topic = t,
+                                partition = msg.partition(),
+                                offset = msg.offset(),
+                                "invalid auth feed payload"
+                            ),
+                        }
                     } else {
-                        "unknown_topic"
-                    };
-                    tracing::info!(
-                        topic = t,
-                        kind,
-                        partition = msg.partition(),
-                        offset = msg.offset(),
-                        payload = %body,
-                        "kafka consumer event"
-                    );
+                        tracing::warn!(topic = t, "kafka message on unexpected topic");
+                    }
                 }
                 Err(e) => tracing::warn!(error = %e, "kafka stream error"),
             }

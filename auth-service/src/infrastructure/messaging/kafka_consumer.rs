@@ -1,13 +1,19 @@
+use std::sync::Arc;
+
 use futures::StreamExt;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::message::Message;
 
+use crate::application::ports::{AuthEvent, AuthEventInboundHandlerRef};
 use crate::config::config::AppConfig;
 
 use super::kafka_admin::ensure_auth_events_topic;
 use super::kafka_client::base_client_config;
 
-pub async fn spawn_auth_event_consumer_if_enabled(config: &AppConfig) {
+pub async fn spawn_auth_event_consumer_if_enabled(
+    config: &AppConfig,
+    auth_event_inbound_handler: AuthEventInboundHandlerRef,
+) {
     if !config.kafka_enabled {
         return;
     }
@@ -44,6 +50,7 @@ pub async fn spawn_auth_event_consumer_if_enabled(config: &AppConfig) {
         return;
     }
 
+    let auth_event_inbound_handler = Arc::clone(&auth_event_inbound_handler);
     tokio::spawn(async move {
         tracing::info!(
             service = "auth-service",
@@ -59,13 +66,20 @@ pub async fn spawn_auth_event_consumer_if_enabled(config: &AppConfig) {
                         .payload()
                         .map(|p| String::from_utf8_lossy(p).into_owned())
                         .unwrap_or_default();
-                    tracing::info!(
-                        topic = msg.topic(),
-                        partition = msg.partition(),
-                        offset = msg.offset(),
-                        payload = %body,
-                        "kafka consumer: auth event received"
-                    );
+                    match serde_json::from_str::<AuthEvent>(&body) {
+                        Ok(event) => {
+                            if let Err(e) = auth_event_inbound_handler.handle(event).await {
+                                tracing::warn!(error = %e, "auth_event_inbound_handler error");
+                            }
+                        }
+                        Err(e) => tracing::warn!(
+                            error = %e,
+                            topic = msg.topic(),
+                            partition = msg.partition(),
+                            offset = msg.offset(),
+                            "invalid auth event payload"
+                        ),
+                    }
                 }
                 Err(e) => tracing::warn!(error = %e, "kafka stream error"),
             }

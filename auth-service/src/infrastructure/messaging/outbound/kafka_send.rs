@@ -1,4 +1,5 @@
-//! Shared Kafka produce helper for this crate's messaging adapters.
+//! Shared Kafka produce helper — bounded contexts call this with topic + key + JSON
+//! without coupling to [`crate::application::ports::AuthEventPublisher`].
 
 use std::time::Duration;
 
@@ -6,7 +7,7 @@ use rdkafka::Message;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
 
-pub(in crate::infrastructure::messaging) async fn send_json_bytes(
+pub async fn send_json_bytes(
     producer: &FutureProducer,
     topic: &str,
     partition_key: &str,

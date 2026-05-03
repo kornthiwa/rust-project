@@ -1,5 +1,4 @@
-//! Shared Kafka produce helper — any bounded context can call this with its own topic + key + JSON
-//! without touching `AuthEventPublisher` or auth-specific adapters.
+//! Shared Kafka produce helper — bounded contexts call this with topic + key + JSON.
 
 use std::time::Duration;
 
@@ -7,7 +6,7 @@ use rdkafka::Message;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
 
-pub(in crate::infrastructure::messaging) async fn send_json_bytes(
+pub async fn send_json_bytes(
     producer: &FutureProducer,
     topic: &str,
     partition_key: &str,

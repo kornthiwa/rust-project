@@ -12,11 +12,15 @@ use sqlx::postgres::PgPoolOptions;
 use tower_http::catch_panic::CatchPanicLayer;
 
 use crate::application::message::service::MessageService;
-use crate::application::ports::MessageEventPublisher;
+use crate::application::ports::{
+    MessageEventPublisher, MessagingInboundHandlerRef,
+};
 use crate::config::config::AppConfig;
 use crate::domain::message::repository::MessageRepository;
 use crate::infrastructure::message::postgres_repository::PostgresMessageRepository;
-use crate::infrastructure::messaging::{KafkaMessageEventPublisher, NoopMessageEventPublisher};
+use crate::infrastructure::messaging::{
+    KafkaMessageEventPublisher, LoggingMessagingInboundHandler, NoopMessageEventPublisher,
+};
 use crate::presentation::http::{
     error::ApiError, message_handler, middleware::jwt_auth_middleware,
 };
@@ -72,7 +76,12 @@ pub struct AppState {
     pub jwt_secret: Arc<String>,
 }
 
-pub async fn build_router(app_config: &AppConfig) -> Result<Router, BuildError> {
+pub struct Bootstrap {
+    pub router: Router,
+    pub messaging_inbound_handler: MessagingInboundHandlerRef,
+}
+
+pub async fn bootstrap(app_config: &AppConfig) -> Result<Bootstrap, BuildError> {
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(&app_config.database_url)
@@ -80,6 +89,8 @@ pub async fn build_router(app_config: &AppConfig) -> Result<Router, BuildError> 
 
     sqlx::migrate!("./migrations").run(&pool).await?;
 
+    let messaging_inbound_handler: MessagingInboundHandlerRef =
+        Arc::new(LoggingMessagingInboundHandler);
     let state = build_app_state(app_config, pool)?;
 
     let protected_messages_router = message_handler::routes().layer(
@@ -90,12 +101,23 @@ pub async fn build_router(app_config: &AppConfig) -> Result<Router, BuildError> 
         .route("/", get(root))
         .nest("/messages", protected_messages_router);
 
-    Ok(Router::new()
+    let router = Router::new()
         .nest("/api/v1", api_v1_router)
         .fallback(fallback_handler)
         .layer(CatchPanicLayer::new())
         .layer(middleware::from_fn(print_called_path))
-        .with_state(state))
+        .with_state(state);
+
+    Ok(Bootstrap {
+        router,
+        messaging_inbound_handler,
+    })
+}
+
+/// HTTP stack only; prefer [`bootstrap`] when wiring the Kafka consumer.
+#[allow(dead_code)]
+pub async fn build_router(app_config: &AppConfig) -> Result<Router, BuildError> {
+    Ok(bootstrap(app_config).await?.router)
 }
 
 fn build_app_state(app_config: &AppConfig, pool: sqlx::PgPool) -> Result<AppState, BuildError> {

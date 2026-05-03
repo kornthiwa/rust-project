@@ -1,10 +1,9 @@
+mod inbound;
 mod kafka_admin;
 mod kafka_client;
 mod kafka_consumer;
-mod kafka_producer;
-mod kafka_send;
-mod noop_publisher;
+mod outbound;
 
+pub use inbound::LoggingAuthEventInboundHandler;
 pub use kafka_consumer::spawn_auth_event_consumer_if_enabled;
-pub use kafka_producer::KafkaAuthEventPublisher;
-pub use noop_publisher::NoopAuthEventPublisher;
+pub use outbound::{KafkaAuthEventPublisher, NoopAuthEventPublisher};

@@ -5,8 +5,8 @@ use rdkafka::producer::FutureProducer;
 
 use crate::application::ports::{MessageEvent, MessageEventPublisher};
 use crate::config::config::AppConfig;
+use crate::infrastructure::messaging::kafka_client::base_client_config;
 
-use super::kafka_client::base_client_config;
 use super::kafka_send::send_json_bytes;
 
 pub struct KafkaMessageEventPublisher {

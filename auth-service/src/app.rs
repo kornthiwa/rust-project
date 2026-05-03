@@ -13,11 +13,15 @@ use tower_http::catch_panic::CatchPanicLayer;
 
 use crate::application::account::service::AccountService;
 use crate::application::auth::service::AuthService;
-use crate::application::ports::AuthEventPublisher;
+use crate::application::ports::{
+    AuthEventInboundHandlerRef, AuthEventPublisher,
+};
 use crate::config::config::AppConfig;
 use crate::domain::account::repository::AccountRepository;
 use crate::infrastructure::account::postgres_repository::PostgresAccountRepository;
-use crate::infrastructure::messaging::{KafkaAuthEventPublisher, NoopAuthEventPublisher};
+use crate::infrastructure::messaging::{
+    KafkaAuthEventPublisher, LoggingAuthEventInboundHandler, NoopAuthEventPublisher,
+};
 use crate::presentation::http::{
     account_handler, auth_handler, error::ApiError, middleware::jwt_auth_middleware,
 };
@@ -73,7 +77,12 @@ pub struct AppState {
     pub auth_service: Arc<AuthService>,
 }
 
-pub async fn build_router(app_config: &AppConfig) -> Result<Router, BuildError> {
+pub struct Bootstrap {
+    pub router: Router,
+    pub auth_event_inbound_handler: AuthEventInboundHandlerRef,
+}
+
+pub async fn bootstrap(app_config: &AppConfig) -> Result<Bootstrap, BuildError> {
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(&app_config.database_url)
@@ -81,6 +90,8 @@ pub async fn build_router(app_config: &AppConfig) -> Result<Router, BuildError> 
 
     sqlx::migrate!("./migrations").run(&pool).await?;
 
+    let auth_event_inbound_handler: AuthEventInboundHandlerRef =
+        Arc::new(LoggingAuthEventInboundHandler);
     let state = build_app_state(app_config, pool)?;
 
     let protected_account_router = account_handler::routes().layer(middleware::from_fn_with_state(
@@ -95,12 +106,23 @@ pub async fn build_router(app_config: &AppConfig) -> Result<Router, BuildError> 
 
     let api_v1_router = Router::new().nest("/auth", auth_branch);
 
-    Ok(Router::new()
+    let router = Router::new()
         .nest("/api/v1", api_v1_router)
         .fallback(fallback_handler)
         .layer(CatchPanicLayer::new())
         .layer(middleware::from_fn(print_called_path))
-        .with_state(state))
+        .with_state(state);
+
+    Ok(Bootstrap {
+        router,
+        auth_event_inbound_handler,
+    })
+}
+
+/// HTTP stack only; prefer [`bootstrap`] when wiring the Kafka consumer.
+#[allow(dead_code)]
+pub async fn build_router(app_config: &AppConfig) -> Result<Router, BuildError> {
+    Ok(bootstrap(app_config).await?.router)
 }
 
 fn build_app_state(app_config: &AppConfig, pool: sqlx::PgPool) -> Result<AppState, BuildError> {
