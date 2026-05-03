@@ -3,6 +3,7 @@ use std::sync::Arc;
 use serde::Deserialize;
 
 use crate::application::error::AppError;
+use crate::application::ports::{MessageEvent, MessageEventPublisher};
 use crate::domain::message::entity::Message;
 use crate::domain::message::repository::MessageRepository;
 
@@ -16,11 +17,18 @@ pub struct CreateMessageInput {
 
 pub struct MessageService {
     repository: Arc<dyn MessageRepository>,
+    message_events: Arc<dyn MessageEventPublisher>,
 }
 
 impl MessageService {
-    pub fn new(repository: Arc<dyn MessageRepository>) -> Self {
-        Self { repository }
+    pub fn new(
+        repository: Arc<dyn MessageRepository>,
+        message_events: Arc<dyn MessageEventPublisher>,
+    ) -> Self {
+        Self {
+            repository,
+            message_events,
+        }
     }
 
     pub async fn create_message(
@@ -31,14 +39,27 @@ impl MessageService {
         validate_conversation_id(&input.conversation_id)?;
         validate_body(&input.body)?;
 
-        self.repository
+        let message = self
+            .repository
             .create(
                 input.conversation_id.trim().to_string(),
                 author_subject,
                 input.body.trim().to_string(),
             )
             .await
-            .map_err(|err| AppError::internal_with_source("repository_error", err.to_string()))
+            .map_err(|err| AppError::internal_with_source("repository_error", err.to_string()))?;
+
+        let event = MessageEvent::message_created(
+            message.id,
+            message.public_id.clone(),
+            message.conversation_id.clone(),
+            message.author_subject.clone(),
+        );
+        if let Err(e) = self.message_events.publish(event).await {
+            tracing::warn!(error = %e, "failed to publish message_created event");
+        }
+
+        Ok(message)
     }
 
     pub async fn get_message(&self, message_id: u64) -> Result<Message, AppError> {
@@ -98,6 +119,7 @@ mod tests {
     use crate::application::error::AppError;
     use crate::domain::message::entity::Message;
     use crate::domain::message::repository::MessageRepository;
+    use crate::infrastructure::messaging::NoopMessageEventPublisher;
 
     struct MockMessageRepository;
 
@@ -133,7 +155,10 @@ mod tests {
 
     #[tokio::test]
     async fn create_message_success_returns_message() {
-        let service = MessageService::new(Arc::new(MockMessageRepository));
+        let service = MessageService::new(
+            Arc::new(MockMessageRepository),
+            Arc::new(NoopMessageEventPublisher),
+        );
         let input = CreateMessageInput {
             conversation_id: "conv-1".to_string(),
             body: "hello".to_string(),
@@ -150,7 +175,10 @@ mod tests {
 
     #[tokio::test]
     async fn create_message_failure_empty_body_returns_validation_error() {
-        let service = MessageService::new(Arc::new(MockMessageRepository));
+        let service = MessageService::new(
+            Arc::new(MockMessageRepository),
+            Arc::new(NoopMessageEventPublisher),
+        );
         let input = CreateMessageInput {
             conversation_id: "conv-1".to_string(),
             body: "   ".to_string(),

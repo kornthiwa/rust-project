@@ -17,10 +17,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app_config: AppConfig = AppConfig::from_env()?;
     let app: axum::Router = app::build_router(&app_config).await?;
-    spawn_auth_event_consumer_if_enabled(&app_config);
+    spawn_auth_event_consumer_if_enabled(&app_config).await;
 
-    let listener: TcpListener = TcpListener::bind(app_config.port_config()).await?;
-    tracing::info!(addr = %app_config.port_config(), "auth service listening");
+    let addr = app_config.port_config();
+    let listener: TcpListener = TcpListener::bind(&addr).await?;
+    tracing::info!(service = "auth-service", addr = %addr, "service listening");
 
     axum::serve(listener, app).await?;
     Ok(())

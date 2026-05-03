@@ -4,11 +4,19 @@ use rdkafka::message::Message;
 
 use crate::config::config::AppConfig;
 
-use super::kafka_admin::ensure_auth_events_topic;
+use super::kafka_admin::{ensure_auth_events_topic, ensure_message_events_topic};
 use super::kafka_client::base_client_config;
 
-pub async fn spawn_auth_event_consumer_if_enabled(config: &AppConfig) {
+pub async fn spawn_message_event_consumer_if_enabled(config: &AppConfig) {
     if !config.kafka_enabled {
+        return;
+    }
+
+    if let Err(e) = ensure_message_events_topic(config).await {
+        tracing::error!(
+            error = %e,
+            "failed to ensure kafka topic for message events; consumer not started"
+        );
         return;
     }
 
@@ -20,7 +28,8 @@ pub async fn spawn_auth_event_consumer_if_enabled(config: &AppConfig) {
         return;
     }
 
-    let topic = config.kafka_topic_auth_events.clone();
+    let message_topic = config.kafka_topic_message_events.clone();
+    let auth_topic = config.kafka_topic_auth_events.clone();
     let group = config.kafka_consumer_group.clone();
 
     let mut client = base_client_config(config, "consumer");
@@ -39,15 +48,15 @@ pub async fn spawn_auth_event_consumer_if_enabled(config: &AppConfig) {
         }
     };
 
-    if let Err(e) = consumer.subscribe(&[topic.as_str()]) {
+    if let Err(e) = consumer.subscribe(&[message_topic.as_str(), auth_topic.as_str()]) {
         tracing::error!(error = %e, "failed to subscribe kafka consumer");
         return;
     }
 
     tokio::spawn(async move {
         tracing::info!(
-            service = "auth-service",
-            topic = %topic,
+            service = "messages-service",
+            topics = ?[&message_topic, &auth_topic],
             group = %group,
             "kafka consumer started"
         );
@@ -59,12 +68,21 @@ pub async fn spawn_auth_event_consumer_if_enabled(config: &AppConfig) {
                         .payload()
                         .map(|p| String::from_utf8_lossy(p).into_owned())
                         .unwrap_or_default();
+                    let t = msg.topic();
+                    let kind = if t == message_topic.as_str() {
+                        "message_event"
+                    } else if t == auth_topic.as_str() {
+                        "auth_event"
+                    } else {
+                        "unknown_topic"
+                    };
                     tracing::info!(
-                        topic = msg.topic(),
+                        topic = t,
+                        kind,
                         partition = msg.partition(),
                         offset = msg.offset(),
                         payload = %body,
-                        "kafka consumer: auth event received"
+                        "kafka consumer event"
                     );
                 }
                 Err(e) => tracing::warn!(error = %e, "kafka stream error"),

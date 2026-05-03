@@ -6,6 +6,7 @@ mod infrastructure;
 mod presentation;
 
 use crate::config::config::AppConfig;
+use crate::infrastructure::messaging::spawn_message_event_consumer_if_enabled;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
@@ -16,6 +17,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app_config: AppConfig = AppConfig::from_env()?;
     let app = app::build_router(&app_config).await?;
+    spawn_message_event_consumer_if_enabled(&app_config).await;
     let addr = app_config.port_config();
     let listener = TcpListener::bind(&addr).await?;
 

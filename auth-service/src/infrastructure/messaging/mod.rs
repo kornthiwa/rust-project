@@ -1,3 +1,4 @@
+mod kafka_admin;
 mod kafka_client;
 mod kafka_consumer;
 mod kafka_producer;
