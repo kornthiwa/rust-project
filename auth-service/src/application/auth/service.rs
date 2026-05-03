@@ -10,6 +10,7 @@ use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 
 use crate::application::error::AppError;
+use crate::application::ports::{AuthEvent, AuthEventPublisher};
 use crate::domain::account::entity::Account;
 use crate::domain::account::repository::AccountRepository;
 
@@ -31,6 +32,7 @@ pub struct AuthService {
     repository: Arc<dyn AccountRepository>,
     jwt_secret: String,
     jwt_expiration_seconds: i64,
+    auth_event_publisher: Arc<dyn AuthEventPublisher>,
 }
 
 impl AuthService {
@@ -38,11 +40,13 @@ impl AuthService {
         repository: Arc<dyn AccountRepository>,
         jwt_secret: String,
         jwt_expiration_seconds: i64,
+        auth_event_publisher: Arc<dyn AuthEventPublisher>,
     ) -> Self {
         Self {
             repository,
             jwt_secret,
             jwt_expiration_seconds,
+            auth_event_publisher,
         }
     }
 
@@ -74,7 +78,8 @@ impl AuthService {
 
         let password_hash = hash_password(&password)
             .map_err(|_| AppError::validation("invalid_input", "invalid password"))?;
-        self.repository
+        let account = self
+            .repository
             .create(
                 username,
                 password_hash,
@@ -84,7 +89,15 @@ impl AuthService {
                 None,
             )
             .await
-            .map_err(|err| AppError::internal_with_source("repository_error", err.to_string()))
+            .map_err(|err| AppError::internal_with_source("repository_error", err.to_string()))?;
+
+
+        let event = AuthEvent::user_registered(account.id, account.username.clone());
+        if let Err(e) = self.auth_event_publisher.publish(event).await {
+            tracing::warn!(error = %e, "failed to publish user_registered event");
+        }
+
+        Ok(account)
     }
 
     pub async fn login(&self, username: String, password: String) -> Result<LoginResult, AppError> {
@@ -111,6 +124,9 @@ impl AuthService {
             ));
         }
 
+        let account_id = account.id;
+        let username_for_event = account.username.clone();
+
         let claims = JwtClaims {
             sub: account.id.to_string(),
             username: account.username,
@@ -124,11 +140,22 @@ impl AuthService {
         )
         .map_err(|_| AppError::internal("token_creation_failed"))?;
 
-        Ok(LoginResult {
+        let result = LoginResult {
             access_token,
             token_type: String::from("Bearer"),
             expires_in_seconds: self.jwt_expiration_seconds,
-        })
+        };
+
+        let event = AuthEvent::user_logged_in(
+            account_id,
+            username_for_event,
+            self.jwt_expiration_seconds,
+        );
+        if let Err(e) = self.auth_event_publisher.publish(event).await {
+            tracing::warn!(error = %e, "failed to publish user_logged_in event");
+        }
+
+        Ok(result)
     }
 
     pub fn verify_jwt(&self, token: &str) -> Result<JwtClaims, AppError> {

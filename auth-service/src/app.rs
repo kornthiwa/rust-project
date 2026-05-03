@@ -1,3 +1,4 @@
+use std::fmt;
 use std::sync::Arc;
 
 use axum::Router;
@@ -12,12 +13,59 @@ use tower_http::catch_panic::CatchPanicLayer;
 
 use crate::application::account::service::AccountService;
 use crate::application::auth::service::AuthService;
+use crate::application::ports::AuthEventPublisher;
 use crate::config::config::AppConfig;
 use crate::domain::account::repository::AccountRepository;
 use crate::infrastructure::account::postgres_repository::PostgresAccountRepository;
+use crate::infrastructure::messaging::{KafkaAuthEventPublisher, NoopAuthEventPublisher};
 use crate::presentation::http::{
     account_handler, auth_handler, error::ApiError, middleware::jwt_auth_middleware,
 };
+
+#[derive(Debug)]
+pub enum BuildError {
+    Sqlx(sqlx::Error),
+    Migrate(sqlx::migrate::MigrateError),
+    Kafka(rdkafka::error::KafkaError),
+}
+
+impl fmt::Display for BuildError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BuildError::Sqlx(e) => write!(f, "database: {e}"),
+            BuildError::Migrate(e) => write!(f, "migration: {e}"),
+            BuildError::Kafka(e) => write!(f, "kafka: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for BuildError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            BuildError::Sqlx(e) => Some(e),
+            BuildError::Migrate(e) => Some(e),
+            BuildError::Kafka(e) => Some(e),
+        }
+    }
+}
+
+impl From<sqlx::migrate::MigrateError> for BuildError {
+    fn from(value: sqlx::migrate::MigrateError) -> Self {
+        BuildError::Migrate(value)
+    }
+}
+
+impl From<sqlx::Error> for BuildError {
+    fn from(value: sqlx::Error) -> Self {
+        BuildError::Sqlx(value)
+    }
+}
+
+impl From<rdkafka::error::KafkaError> for BuildError {
+    fn from(value: rdkafka::error::KafkaError) -> Self {
+        BuildError::Kafka(value)
+    }
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -25,7 +73,7 @@ pub struct AppState {
     pub auth_service: Arc<AuthService>,
 }
 
-pub async fn build_router(app_config: &AppConfig) -> Result<Router, sqlx::Error> {
+pub async fn build_router(app_config: &AppConfig) -> Result<Router, BuildError> {
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(&app_config.database_url)
@@ -33,7 +81,7 @@ pub async fn build_router(app_config: &AppConfig) -> Result<Router, sqlx::Error>
 
     sqlx::migrate!("./migrations").run(&pool).await?;
 
-    let state = build_app_state(app_config, pool);
+    let state = build_app_state(app_config, pool)?;
 
     let protected_account_router = account_handler::routes().layer(middleware::from_fn_with_state(
         state.clone(),
@@ -55,7 +103,13 @@ pub async fn build_router(app_config: &AppConfig) -> Result<Router, sqlx::Error>
         .with_state(state))
 }
 
-fn build_app_state(app_config: &AppConfig, pool: sqlx::PgPool) -> AppState {
+fn build_app_state(app_config: &AppConfig, pool: sqlx::PgPool) -> Result<AppState, BuildError> {
+    let auth_event_publisher: Arc<dyn AuthEventPublisher> = if app_config.kafka_enabled {
+        Arc::new(KafkaAuthEventPublisher::try_new(app_config)?)
+    } else {
+        Arc::new(NoopAuthEventPublisher)
+    };
+
     let postgres_repository = PostgresAccountRepository::new(pool);
     let account_repository: Arc<dyn AccountRepository> = Arc::new(postgres_repository);
     let account_service = Arc::new(AccountService::new(Arc::clone(&account_repository)));
@@ -63,12 +117,13 @@ fn build_app_state(app_config: &AppConfig, pool: sqlx::PgPool) -> AppState {
         Arc::clone(&account_repository),
         app_config.jwt_secret.clone(),
         app_config.jwt_expiration_seconds,
+        Arc::clone(&auth_event_publisher),
     ));
 
-    AppState {
+    Ok(AppState {
         account_service,
         auth_service,
-    }
+    })
 }
 
 async fn root() -> &'static str {

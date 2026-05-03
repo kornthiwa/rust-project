@@ -6,6 +6,7 @@ mod infrastructure;
 mod presentation;
 
 use crate::config::config::AppConfig;
+use crate::infrastructure::messaging::spawn_auth_event_consumer_if_enabled;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
@@ -16,6 +17,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app_config: AppConfig = AppConfig::from_env()?;
     let app: axum::Router = app::build_router(&app_config).await?;
+    spawn_auth_event_consumer_if_enabled(&app_config);
 
     let listener: TcpListener = TcpListener::bind(app_config.port_config()).await?;
     tracing::info!(addr = %app_config.port_config(), "auth service listening");
