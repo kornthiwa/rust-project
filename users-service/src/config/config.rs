@@ -1,5 +1,7 @@
-use dotenv::dotenv;
 use std::env;
+use std::fmt;
+
+use dotenv::dotenv;
 
 #[derive(Debug)]
 pub enum ConfigError {
@@ -8,7 +10,7 @@ pub enum ConfigError {
 }
 
 impl std::fmt::Display for ConfigError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingEnv(name) => write!(f, "missing required env var: {name}"),
             Self::InvalidEnv(name) => write!(f, "invalid value for env var: {name}"),
@@ -43,11 +45,30 @@ fn parse_u16_default(name: &'static str, default: u16) -> Result<u16, ConfigErro
     }
 }
 
+/// When unset, defaults to `true`. Set `false` / `0` / `no` / `off` to disable.
+fn parse_kafka_enabled() -> bool {
+    match env::var("KAFKA_ENABLED") {
+        Ok(s) => {
+            let t = s.trim().to_lowercase();
+            if t.is_empty() {
+                true
+            } else {
+                !matches!(t.as_str(), "false" | "0" | "no" | "off")
+            }
+        }
+        Err(_) => true,
+    }
+}
+
 pub struct AppConfig {
     pub host: String,
     pub port: u16,
     pub database_url: String,
     pub jwt_secret: String,
+    pub kafka_enabled: bool,
+    pub kafka_bootstrap_servers: String,
+    pub kafka_topic_user_events: String,
+    pub kafka_consumer_group: String,
 }
 
 impl AppConfig {
@@ -57,11 +78,22 @@ impl AppConfig {
         let port = parse_u16_default("PORT", 3100)?;
         let database_url = required_trimmed("DATABASE_URL")?;
         let jwt_secret = required_trimmed("JWT_SECRET")?;
+
+        let kafka_enabled = parse_kafka_enabled();
+        let kafka_bootstrap_servers =
+            default_trimmed("KAFKA_BOOTSTRAP_SERVERS", "127.0.0.1:9092")?;
+        let kafka_topic_user_events = default_trimmed("KAFKA_TOPIC_USER_EVENTS", "users.events")?;
+        let kafka_consumer_group = default_trimmed("KAFKA_CONSUMER_GROUP", "users-service")?;
+
         Ok(Self {
             host,
             port,
             database_url,
             jwt_secret,
+            kafka_enabled,
+            kafka_bootstrap_servers,
+            kafka_topic_user_events,
+            kafka_consumer_group,
         })
     }
 

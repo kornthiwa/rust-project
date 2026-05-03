@@ -3,6 +3,7 @@ use std::sync::Arc;
 use serde::Deserialize;
 
 use crate::application::error::AppError;
+use crate::application::ports::{UserEvent, UserEventPublisher};
 use crate::domain::user::entity::User;
 use crate::domain::user::repository::UserRepository;
 
@@ -22,11 +23,18 @@ pub struct UpdateUserInput {
 
 pub struct UserService {
     repository: Arc<dyn UserRepository>,
+    user_event_publisher: Arc<dyn UserEventPublisher>,
 }
 
 impl UserService {
-    pub fn new(repository: Arc<dyn UserRepository>) -> Self {
-        Self { repository }
+    pub fn new(
+        repository: Arc<dyn UserRepository>,
+        user_event_publisher: Arc<dyn UserEventPublisher>,
+    ) -> Self {
+        Self {
+            repository,
+            user_event_publisher,
+        }
     }
 
     pub async fn list_users(&self) -> Result<Vec<User>, AppError> {
@@ -49,14 +57,27 @@ impl UserService {
         validate_email(&input.email)?;
         validate_display_name(&input.display_name)?;
 
-        self.repository
+        let user = self
+            .repository
             .create(
                 input.email.trim().to_string(),
                 input.display_name.trim().to_string(),
                 input.is_active.unwrap_or(true),
             )
             .await
-            .map_err(|err| AppError::internal_with_source("repository_error", err.to_string()))
+            .map_err(|err| AppError::internal_with_source("repository_error", err.to_string()))?;
+
+        let event = UserEvent::user_created(
+            user.id,
+            user.public_id.clone(),
+            user.email.clone(),
+            user.display_name.clone(),
+        );
+        if let Err(e) = self.user_event_publisher.publish(event).await {
+            tracing::warn!(error = %e, "failed to publish user_created event");
+        }
+
+        Ok(user)
     }
 
     pub async fn update_user(
@@ -82,7 +103,19 @@ impl UserService {
             .await
             .map_err(|err| AppError::internal_with_source("repository_error", err.to_string()))?;
 
-        user.ok_or_else(|| AppError::not_found("user_not_found", "user not found"))
+        let user = user.ok_or_else(|| AppError::not_found("user_not_found", "user not found"))?;
+
+        let event = UserEvent::user_updated(
+            user.id,
+            user.public_id.clone(),
+            user.email.clone(),
+            user.display_name.clone(),
+        );
+        if let Err(e) = self.user_event_publisher.publish(event).await {
+            tracing::warn!(error = %e, "failed to publish user_updated event");
+        }
+
+        Ok(user)
     }
 
     pub async fn delete_user(&self, user_id: u64) -> Result<(), AppError> {
@@ -124,8 +157,18 @@ mod tests {
 
     use super::{CreateUserInput, UserService};
     use crate::application::error::AppError;
+    use crate::application::ports::{UserEvent, UserEventPublisher};
     use crate::domain::user::entity::User;
     use crate::domain::user::repository::UserRepository;
+
+    struct MockUserEventPublisher;
+
+    #[async_trait]
+    impl UserEventPublisher for MockUserEventPublisher {
+        async fn publish(&self, _event: UserEvent) -> Result<(), String> {
+            Ok(())
+        }
+    }
 
     struct MockUserRepository;
 
@@ -183,9 +226,13 @@ mod tests {
         }
     }
 
+    fn noop_publisher() -> Arc<dyn UserEventPublisher> {
+        Arc::new(MockUserEventPublisher)
+    }
+
     #[tokio::test]
     async fn create_user_success_returns_created_user() {
-        let service = UserService::new(Arc::new(MockUserRepository));
+        let service = UserService::new(Arc::new(MockUserRepository), noop_publisher());
         let input = CreateUserInput {
             email: "new@example.com".to_string(),
             display_name: "New User".to_string(),
@@ -199,7 +246,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_user_failure_invalid_email_returns_validation_error() {
-        let service = UserService::new(Arc::new(MockUserRepository));
+        let service = UserService::new(Arc::new(MockUserRepository), noop_publisher());
         let input = CreateUserInput {
             email: "invalid".to_string(),
             display_name: "New User".to_string(),

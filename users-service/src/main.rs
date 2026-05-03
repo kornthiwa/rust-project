@@ -5,7 +5,9 @@ mod domain;
 mod infrastructure;
 mod presentation;
 
+use crate::app::{bootstrap, Bootstrap};
 use crate::config::config::AppConfig;
+use crate::infrastructure::messaging::spawn_user_event_consumer_if_enabled;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
@@ -15,7 +17,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt().with_env_filter(env_filter).init();
 
     let app_config: AppConfig = AppConfig::from_env()?;
-    let app = app::build_router(&app_config).await?;
+    let Bootstrap {
+        router: app,
+        user_event_inbound_handler,
+    } = bootstrap(&app_config).await?;
+    spawn_user_event_consumer_if_enabled(&app_config, user_event_inbound_handler).await;
     let addr = app_config.port_config();
     let listener = TcpListener::bind(&addr).await?;
 

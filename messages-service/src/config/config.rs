@@ -66,7 +66,6 @@ pub struct AppConfig {
     pub kafka_enabled: bool,
     pub kafka_bootstrap_servers: String,
     pub kafka_topic_message_events: String,
-    /// Same default as auth-service: login/register events for optional cross-service consume.
     pub kafka_topic_auth_events: String,
     pub kafka_consumer_group: String,
 }
